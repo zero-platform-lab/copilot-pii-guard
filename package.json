@@ -288,20 +288,32 @@
 		"menus": {
 			"editor/context": [
 				{
+					"submenu": "piiGuard.editor",
+					"group": "9_pii"
+				}
+			],
+			"piiGuard.editor": [
+				{
 					"command": "piiGuard.maskFile",
-					"group": "9_pii@1"
+					"group": "1_mask@1"
 				},
 				{
 					"command": "piiGuard.restoreFile",
-					"group": "9_pii@2"
+					"group": "1_mask@2"
 				},
 				{
 					"command": "piiGuard.addToDictionary",
 					"when": "editorHasSelection",
-					"group": "9_pii@3"
+					"group": "2_dictionary"
 				}
 			]
-		}
+		},
+		"submenus": [
+			{
+				"id": "piiGuard.editor",
+				"label": "PII Guard"
+			}
+		]
 	},
 	"scripts": {
 		"check-types": "tsc --noEmit",
