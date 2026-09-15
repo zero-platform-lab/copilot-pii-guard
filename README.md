@@ -281,7 +281,11 @@ py -3.11 -m venv .venv-model
 src/
   extension.ts    入口。参加者とコマンドを登録する
   participant.ts  @mask の受け口。伏せて送り、戻して出す
+  fileTools.ts    @mask専用のファイル一覧・検索・読取・書込
   stream.ts       区切りをまたいだ伏せ字を戻す
   settings.ts     VS Code の設定を読む
   pii/            伏せる処理そのもの
 ```
+
+今後のエージェント機能は、[Masked Code Agent 要求仕様・機能設計](docs/masked-agent-requirements.md)
+にまとめています。
