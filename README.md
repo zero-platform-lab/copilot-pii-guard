@@ -46,14 +46,14 @@ npm run vsix          # VSIX を bin/ に生成
 
 | 出来るもの | 対象 | 固有名詞検出 |
 | --- | --- | --- |
-| `copilot-pii-guard-linux-x64-0.2.3.vsix` | Linux (x64) | 動く |
-| `copilot-pii-guard-win32-x64-0.2.3.vsix` | Windows (x64) | 動く |
-| `copilot-pii-guard-0.2.3.vsix` | それ以外 | 動かない（基本検出は動く） |
+| `copilot-pii-guard-linux-x64-0.2.4.vsix` | Linux (x64) | 動く |
+| `copilot-pii-guard-win32-x64-0.2.4.vsix` | Windows (x64) | 動く |
+| `copilot-pii-guard-0.2.4.vsix` | それ以外 | 動かない（基本検出は動く） |
 
 ## 入れ方
 
 ```sh
-code --install-extension bin/copilot-pii-guard-linux-x64-0.2.3.vsix
+code --install-extension bin/copilot-pii-guard-linux-x64-0.2.4.vsix
 ```
 
 VS Code の画面からは、拡張機能ビューの右上にある `…` から **VSIX からのインストール** を選びます。
@@ -70,6 +70,10 @@ VS Code の画面からは、拡張機能ビューの右上にある `…` か�
 ```
 @mask この議事録を要約して
 ```
+
+同じチャットで `@mask` を続けて使うと、それまでの `@mask` との会話も伏せて引き継ぎます。
+VS Codeが拡張機能へ渡すのは同じ参加者の履歴だけなので、通常のCopilotとの会話から途中で
+`@mask` へ切り替えた場合、それ以前の会話は引き継げません。
 
 添付したファイルや選択範囲も、`@mask` が受け取れた本文は同じように伏せます。読み込めない
 参照は Copilot へ送らず、チャットに警告を表示します。
@@ -168,7 +172,56 @@ ONNXへ変換し、int8へ量子化したものです。元モデルは、日本
 （CC BY-SA 3.0）で固有表現抽出向けに学習されています。元のモデルとデータセットは、それぞれの
 配布ページから確認できます。
 
-モデルを作り直す手順は `docs/build-ner-model.md` に記載しています。
+### モデルを作り直す
+
+変換用のスクリプトと依存一覧はVSIXにも入っています。VSIXだけを受け取った場合は、まず
+VSIXをZIPとして展開します。
+
+Linux:
+
+```sh
+unzip copilot-pii-guard-linux-x64-0.2.4.vsix -d pii-guard-model-builder
+cd pii-guard-model-builder/extension
+```
+
+Windows（PowerShell）:
+
+```powershell
+Copy-Item .\copilot-pii-guard-win32-x64-0.2.4.vsix .\copilot-pii-guard.zip
+Expand-Archive .\copilot-pii-guard.zip -DestinationPath .\pii-guard-model-builder
+Set-Location .\pii-guard-model-builder\extension
+```
+
+リポジトリを取得済みの場合は、展開せずリポジトリのルートで次へ進みます。
+
+必要なものはPython 3.11と、モデルを取得できるネットワーク接続です。DockerとNode.jsは
+使いません。
+
+Linux:
+
+```sh
+python3.11 -m venv .venv-model
+.venv-model/bin/python -m pip install -r scripts/model-requirements.txt
+.venv-model/bin/python scripts/build_ner_model.py
+```
+
+Windows（PowerShell）:
+
+```powershell
+py -3.11 -m venv .venv-model
+.venv-model\Scripts\python.exe -m pip install -r scripts\model-requirements.txt
+.venv-model\Scripts\python.exe scripts\build_ner_model.py
+```
+
+`build/ner-model/upload` に、個別配布用のモデルファイル、`SHA256SUMS`、手動搬送用の
+`ner-ja.tar.gz` が作られます。別の出力先を指定する場合は、スクリプトの末尾へパスを渡します。
+
+```sh
+.venv-model/bin/python scripts/build_ner_model.py build/another-model
+```
+
+個別配布用ファイルは同じディレクトリへ平らに置き、そのURLを
+`piiGuard.properNouns.modelUrl` に設定します。READMEに記載しているURLは例示用です。
 
 ## 中身
 

@@ -45,7 +45,10 @@ export class Uri {
 	static file = (path: string) => ({ fsPath: path, path })
 }
 export const ProgressLocation = { Notification: 15 }
-export const LanguageModelChatMessage = { User: (text: string) => ({ role: 1, content: text }) }
+export const LanguageModelChatMessage = {
+	User: (text: string) => ({ role: 1, content: text }),
+	Assistant: (text: string) => ({ role: 2, content: text }),
+}
 export class MarkdownString {
 	value = ""
 	appendMarkdown(text: string) {

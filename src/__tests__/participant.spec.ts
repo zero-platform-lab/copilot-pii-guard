@@ -64,7 +64,12 @@ async function ask(settings: object, reply: string[] = ["わかりました"], r
 		selectModel: async () => fake.model as never,
 	})
 
-	await handler({ prompt: PROMPT, references } as never, {} as never, out.stream as never, {} as never)
+	await handler(
+		{ prompt: PROMPT, references } as never,
+		{ history: [] } as never,
+		out.stream as never,
+		{} as never,
+	)
 
 	return { sent: fake.seen.join(""), shown: out.parts.join("") }
 }
@@ -189,7 +194,12 @@ describe("伏せてから Copilot へ送る", () => {
 			selectModel: async () => fake.model as never,
 		})
 
-		await handler({ prompt: "今日の天気は" } as never, {} as never, out.stream as never, {} as never)
+		await handler(
+			{ prompt: "今日の天気は" } as never,
+			{ history: [] } as never,
+			out.stream as never,
+			{} as never,
+		)
 
 		// 「伏せました」と紛れない文にする。0 件なのに伏せたように見せない。
 		expect(out.parts.join("")).toContain("伏せるものは見つかりませんでした")
@@ -203,8 +213,67 @@ describe("伏せてから Copilot へ送る", () => {
 			selectModel: async () => undefined,
 		})
 
-		await handler({ prompt: PROMPT } as never, {} as never, out.stream as never, {} as never)
+		await handler({ prompt: PROMPT } as never, { history: [] } as never, out.stream as never, {} as never)
 
 		expect(out.parts.join("")).toContain("Copilot")
+	})
+
+	it("同じ @mask との会話履歴を伏せてから順番どおり引き継ぐ", async () => {
+		const previousEmail = "hanako@corp.example"
+		const fake = fakeModel(["承知しました"])
+		const out = fakeStream()
+		const handler = createHandler({
+			masker: () => new TaskPiiMasker({ enabled: true } as never),
+			isEnabled: () => true,
+			selectModel: async () => fake.model as never,
+		})
+		const history = [
+			{ prompt: `${previousEmail} の担当を覚えて`, references: [], participant: "pii-guard.mask" },
+			{
+				response: [{ value: { value: `担当は ${previousEmail} ですね` } }],
+				result: {},
+				participant: "pii-guard.mask",
+			},
+		]
+
+		await handler(
+			{ prompt: "その担当へ案内を書いて", references: [] } as never,
+			{ history } as never,
+			out.stream as never,
+			{} as never,
+		)
+
+		expect(fake.seen).toHaveLength(3)
+		expect(fake.seen[0]).toContain("{{email-001}} の担当を覚えて")
+		expect(fake.seen[1]).toContain("担当は {{email-001}} ですね")
+		expect(fake.seen[2]).toBe("その担当へ案内を書いて")
+		for (const sent of fake.seen) expect(sent).not.toContain(previousEmail)
+	})
+
+	it("前回の状態表示をモデルの会話履歴へ混ぜない", async () => {
+		const fake = fakeModel(["続けます"])
+		const out = fakeStream()
+		const handler = createHandler({
+			masker: () => new TaskPiiMasker({ enabled: true } as never),
+			isEnabled: () => true,
+			selectModel: async () => fake.model as never,
+		})
+		const history = [
+			{ prompt: "最初の依頼", references: [], participant: "pii-guard.mask" },
+			{
+				response: [{ value: { value: "> 🛡 伏せました。\n\nモデルの回答" } }],
+				result: { metadata: { "piiGuard.modelResponse": "モデルの回答" } },
+				participant: "pii-guard.mask",
+			},
+		]
+
+		await handler(
+			{ prompt: "続きを書いて", references: [] } as never,
+			{ history } as never,
+			out.stream as never,
+			{} as never,
+		)
+
+		expect(fake.seen).toEqual(["最初の依頼", "モデルの回答", "続きを書いて"])
 	})
 })

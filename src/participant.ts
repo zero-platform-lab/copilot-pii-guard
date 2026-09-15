@@ -13,6 +13,10 @@ import * as vscode from "vscode"
 import type { TaskPiiMasker } from "./pii/TaskPiiMasker"
 import { createStreamRestorer } from "./stream"
 import { t } from "./messages"
+import type { AgentMessage } from "./types"
+
+/** 履歴へ残す、モデルが実際に返した本文。状態表示を次の依頼へ混ぜないために使う。 */
+const MODEL_RESPONSE_METADATA = "piiGuard.modelResponse"
 
 /** 画面へ出す種類の名前。設定の説明と揃える。 */
 const LABELS: Record<string, string> = {
@@ -135,6 +139,60 @@ export function promptWithReferences(prompt: string, references: readonly Refere
 	].join("")
 }
 
+/** 応答履歴のうち、モデルへ再び渡せるMarkdown本文だけを取り出す。 */
+function responseText(turn: vscode.ChatResponseTurn): string {
+	const saved = turn.result.metadata?.[MODEL_RESPONSE_METADATA]
+	if (typeof saved === "string") return saved
+
+	// 0.2.3以前の履歴にはmetadataが無い。MarkdownStringの形を見て本文を救う。
+	return turn.response
+		.map((part) => {
+			const value = (part as { value?: unknown }).value
+			if (typeof value !== "object" || value === null || !("value" in value)) return ""
+			return typeof value.value === "string" ? value.value : ""
+		})
+		.join("")
+}
+
+/** 同じ`@mask`参加者との履歴を、伏せる前の内部会話形式へ直す。 */
+async function historyMessages(
+	history: vscode.ChatContext["history"],
+	openTextDocument: (uri: vscode.Uri) => Thenable<vscode.TextDocument>,
+): Promise<{ messages: AgentMessage[]; failures: string[] }> {
+	const messages: AgentMessage[] = []
+	const failures: string[] = []
+
+	for (const turn of history) {
+		if ("prompt" in turn) {
+			const references = await readReferences(turn.references ?? [], openTextDocument)
+			messages.push({
+				type: "message",
+				role: "user",
+				content: promptWithReferences(turn.prompt, references.texts),
+			})
+			failures.push(...references.failures)
+			continue
+		}
+
+		const text = responseText(turn)
+		if (text) messages.push({ type: "message", role: "assistant", content: text })
+	}
+
+	return { messages, failures }
+}
+
+/** 内部会話形式から、VS Codeのモデルへ渡すuser/assistantメッセージを作る。 */
+function toModelMessages(messages: readonly AgentMessage[]): vscode.LanguageModelChatMessage[] {
+	return messages.flatMap((message) => {
+		if (message.type !== "message" || typeof message.content !== "string") return []
+		return [
+			message.role === "assistant"
+				? vscode.LanguageModelChatMessage.Assistant(message.content)
+				: vscode.LanguageModelChatMessage.User(message.content),
+		]
+	})
+}
+
 async function defaultModel(): Promise<vscode.LanguageModelChat | undefined> {
 	const [model] = await vscode.lm.selectChatModels({ vendor: "copilot" })
 	return model
@@ -150,24 +208,38 @@ export function createHandler(deps: ParticipantDeps): vscode.ChatRequestHandler 
 	const selectModel = deps.selectModel ?? defaultModel
 	const openTextDocument = deps.openTextDocument ?? vscode.workspace.openTextDocument
 
-	return async (request, _context, stream, token) => {
+	return async (request, context, stream, token) => {
 		const masker = deps.masker()
+		const history = await historyMessages(context.history ?? [], openTextDocument)
 		const references = await readReferences(request.references ?? [], openTextDocument)
-		const masked = await masker.maskPrompt(promptWithReferences(request.prompt, references.texts))
+		const messages: AgentMessage[] = [
+			...history.messages,
+			{
+				type: "message",
+				role: "user",
+				content: promptWithReferences(request.prompt, references.texts),
+			},
+		]
+		const masked = await masker.maskForRequest("", messages)
+		const current = masked.messages.at(-1)
+		const currentText = current?.type === "message" && typeof current.content === "string" ? current.content : ""
 
 		// **状態を必ず出す。** 切れているのか、伏せるものが無かったのかを、利用者が
 		// 見分けられるようにする。
-		stream.markdown(describeState(deps.isEnabled(), masked.text))
+		stream.markdown(describeState(deps.isEnabled(), currentText))
 		if (references.texts.length > 0) {
 			stream.markdown(`> 🛡 参照した本文 ${references.texts.length} 件も伏せて送ります。\n\n`)
 		}
 		if (references.failures.length > 0) {
 			stream.markdown(`> ⚠️ 読み込めなかった参照は送信しませんでした: ${references.failures.join("、")}\n\n`)
 		}
+		if (history.failures.length > 0) {
+			stream.markdown(`> ⚠️ 過去の参照を読み込めず、会話へ引き継げませんでした: ${history.failures.join("、")}\n\n`)
+		}
 
 		// **何を伏せたかを出す。** 出さないと、伏せたのか素通りしたのかが分からない。
 		// 伏せているつもりで送るのが、いちばん気づけない失敗である。
-		for (const trouble of masker.takeDictionaryTroubles()) {
+		for (const trouble of masked.troubles) {
 			stream.markdown(`> ⚠️ ${t("common:pii.maskingTrouble", { detail: trouble })}\n\n`)
 		}
 
@@ -183,17 +255,18 @@ export function createHandler(deps: ParticipantDeps): vscode.ChatRequestHandler 
 			return
 		}
 
-		const response = await model.sendRequest(
-			[vscode.LanguageModelChatMessage.User(masked.text)],
-			{},
-			token,
-		)
+		const response = await model.sendRequest(toModelMessages(masked.messages), {}, token)
 
 		// **区切りをまたいで戻す。** 断片ごとに戻すと、割れて届いた伏せ字が戻らない。
-		const restorer = createStreamRestorer(masked.restore)
+		const restorer = createStreamRestorer((text) => masker.unmask(text))
+		const modelResponse: string[] = []
 		for await (const fragment of response.text) {
+			modelResponse.push(fragment)
 			stream.markdown(restorer.push(fragment))
 		}
 		stream.markdown(restorer.flush())
+
+		// 次の要求では画面用の状態表示ではなく、モデルの応答本文だけを履歴へ戻す。
+		return { metadata: { [MODEL_RESPONSE_METADATA]: modelResponse.join("") } }
 	}
 }

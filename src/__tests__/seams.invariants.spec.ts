@@ -54,7 +54,8 @@ describe("モデルへ送る箇所", () => {
 		// **生の文を送らない。** `request.prompt` をそのまま渡す枝があれば、伏せ字は
 		// 素通りする。画面には何も出ないので、気づく手がかりが 1 つも無い。
 		const source = await fs.readFile(path.join(SRC, "participant.ts"), "utf8")
-		expect(source).toContain("LanguageModelChatMessage.User(masked.text)")
+		expect(source).toContain("model.sendRequest(toModelMessages(masked.messages)")
+		expect(source).toContain('masker.maskForRequest("", messages)')
 		expect(source).not.toMatch(/User\(request\.prompt\)/)
 	})
 
