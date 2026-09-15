@@ -6,7 +6,7 @@
 
 import * as vscode from "vscode"
 
-import type { PiiMasking } from "./types"
+import { fileToolModes, type FileToolMode, type PiiMasking } from "./types"
 
 /**
  * チェックの入っている名前だけを並べる。
@@ -29,6 +29,12 @@ function checkedNames<T extends string>(value: Record<string, boolean> | undefin
 /** 設定の根。`package.json` の `contributes.configuration` と揃える。 */
 const ROOT = "piiGuard"
 
+/** 未知の値は権限を広げず `off` へ倒す。未設定だけは現行互換の既定を使う。 */
+function fileToolMode(value: unknown): FileToolMode {
+	if (value === undefined) return "confirmEdit"
+	return fileToolModes.includes(value as FileToolMode) ? (value as FileToolMode) : "off"
+}
+
 /**
  * いまの設定を読む。
  *
@@ -43,6 +49,9 @@ export function readSettings(): PiiMasking {
 		restore: config.get<boolean>("restore"),
 		fileWrites: {
 			restore: config.get<boolean>("fileWrites.restore"),
+		},
+		fileTools: {
+			mode: fileToolMode(config.get<unknown>("fileTools.mode")),
 		},
 		kinds: checkedNames<NonNullable<PiiMasking["kinds"]>[number]>(
 			config.get<Record<string, boolean>>("kinds"),

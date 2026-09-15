@@ -13,8 +13,8 @@ import * as vscode from "vscode"
 import type { TaskPiiMasker } from "./pii/TaskPiiMasker"
 import { createStreamRestorer } from "./stream"
 import { t } from "./messages"
-import type { AgentMessage } from "./types"
-import { FILE_TOOLS, runFileTool } from "./fileTools"
+import type { AgentMessage, FileToolMode } from "./types"
+import { FILE_TOOLS, fileToolAccess, runFileTool } from "./fileTools"
 
 /** 履歴へ残す、モデルが実際に返した本文。状態表示を次の依頼へ混ぜないために使う。 */
 const MODEL_RESPONSE_METADATA = "piiGuard.modelResponse"
@@ -74,12 +74,29 @@ export function describeState(enabled: boolean, maskedText: string): string {
 		: "> 🛡 伏せるものは見つかりませんでした。\n\n"
 }
 
-/** ファイル道具がディスクへ書くときの状態。安全側の既定は伏せ字のまま。 */
-export function describeWriteMode(enabled: boolean, restore: boolean): string {
-	if (!enabled) return "> ⚠️ **書込保護: 切** ファイル道具も生の内容を書きます。\n\n"
+/** ファイル道具が書くときの状態。安全側の既定は伏せ字のまま。 */
+export function describeWriteMode(
+	enabled: boolean,
+	restore: boolean,
+	fileToolMode: FileToolMode = "confirmEdit",
+): string {
+	if (!enabled) return "> 🛡 **Write Restore: 停止中** 伏せ字化が切のためファイル道具を使いません。\n\n"
+	if (fileToolMode !== "confirmEdit") {
+		return "> 🛡 **Write Restore: 停止中** 現在の権限では書込道具を使いません。\n\n"
+	}
 	return restore
 		? "> ⚠️ **Write Restore: 入** ファイル道具は元の値へ戻して書きます。\n\n"
 		: "> 🛡 **Write Restore: 切** ファイル道具は伏せ字のまま書きます。\n\n"
+}
+
+/** 設定値と、伏せ字化によって狭めた実効権限を利用者へ示す。 */
+export function describeFileToolMode(enabled: boolean, configured: FileToolMode): string {
+	if (!enabled) return "> 🛡 **ファイル道具: off** 伏せ字化が切のため停止しています。\n\n"
+	if (configured === "off") return "> 🛡 **ファイル道具: off** 一覧・検索・読取・書込を使いません。\n\n"
+	if (configured === "readOnly") {
+		return "> 🛡 **ファイル道具: readOnly** 確認後に一覧・検索・読取だけを使います。\n\n"
+	}
+	return "> 🛡 **ファイル道具: confirmEdit** 読取は依頼ごと、書込は毎回確認します。\n\n"
 }
 
 export type ParticipantDeps = {
@@ -89,6 +106,8 @@ export type ParticipantDeps = {
 	isEnabled: () => boolean
 	/** ファイル道具の書き込みを元の値へ戻すか。既定は戻さない。 */
 	restoreFileWrites?: () => boolean
+	/** ファイル道具の権限。未指定は現行互換の confirmEdit。 */
+	fileToolMode?: () => FileToolMode
 	/** 使うモデルを選ぶ。既定は Copilot のもの。 */
 	selectModel?: () => Promise<vscode.LanguageModelChat | undefined>
 	/** 参照した文書を読む。試験では、実ファイルを開かずに差し替える。 */
@@ -103,6 +122,8 @@ export type ParticipantDeps = {
 		restoreWrites: boolean,
 		token: vscode.CancellationToken,
 	) => Promise<string>
+	/** 依頼で初めて一覧・検索・読取を行う前の確認。 */
+	confirmFileAccess?: (call: ToolCall) => Promise<boolean>
 }
 
 type ReferenceText = { label: string; text: string }
@@ -221,6 +242,52 @@ async function defaultModel(): Promise<vscode.LanguageModelChat | undefined> {
 
 type ToolCall = { callId: string; name: string; input: object }
 
+/** 提示時と実行時で同じ一覧を使うため、権限による絞り込みを1か所に置く。 */
+export function fileToolsForMode(
+	tools: readonly vscode.LanguageModelChatTool[],
+	mode: FileToolMode,
+): readonly vscode.LanguageModelChatTool[] {
+	if (mode === "off") return []
+	return tools.filter((tool) => {
+		const access = fileToolAccess(tool.name)
+		return access === "read" || (access === "write" && mode === "confirmEdit")
+	})
+}
+
+function toolTarget(call: ToolCall): string {
+	const value = (call.input as Record<string, unknown>).path ?? (call.input as Record<string, unknown>).pattern
+	return typeof value === "string" && value.trim() ? `（${value}）` : ""
+}
+
+function toolOperation(call: ToolCall): string {
+	if (call.name === "pii_guard_list_files") return "一覧"
+	if (call.name === "pii_guard_search_files") return "検索"
+	if (call.name === "pii_guard_read_file") return "読取"
+	return call.name
+}
+
+/** 確認画面はローカルなので、モデルが使った伏せ字のパスを利用者にだけ戻して見せる。 */
+function localConfirmationCall(call: ToolCall, masker: TaskPiiMasker): ToolCall {
+	const input = { ...call.input } as Record<string, unknown>
+	for (const key of ["path", "pattern"] as const) {
+		if (typeof input[key] === "string") input[key] = masker.restoreExplicitly(input[key])
+	}
+	return { ...call, input }
+}
+
+async function confirmFileAccess(call: ToolCall): Promise<boolean> {
+	const names = (vscode.workspace.workspaceFolders ?? []).map((folder) => folder.name).join("、")
+	const workspace = names ? `作業場所「${names}」` : "開いている作業場所"
+	const choice = await vscode.window.showWarningMessage(
+		`この依頼で${workspace}のファイルを${toolOperation(call)}し、` +
+			`ファイル名や内容を伏せてからCopilotへ送ります${toolTarget(call)}。` +
+			"検出には漏れがあり得ます。",
+		{ modal: true },
+		"許可する",
+	)
+	return choice === "許可する"
+}
+
 function toolCallFrom(part: unknown): ToolCall | undefined {
 	if (typeof part !== "object" || part === null) return undefined
 	if (!("callId" in part) || !("name" in part) || !("input" in part)) return undefined
@@ -235,6 +302,23 @@ function textFromPart(part: unknown): string | undefined {
 }
 
 const MAX_TOOL_ROUNDS = 12
+const MAX_TOOL_CALLS_PER_ROUND = 8
+const MAX_TOOL_CALLS = 24
+const MAX_WRITE_CALLS = 8
+
+function toolLimitReason(toolCalls: readonly ToolCall[], total: number, writes: number): string | undefined {
+	if (toolCalls.length > MAX_TOOL_CALLS_PER_ROUND) {
+		return `1回の応答に含まれる道具が${MAX_TOOL_CALLS_PER_ROUND}件を超えました`
+	}
+	if (total + toolCalls.length > MAX_TOOL_CALLS) {
+		return `1つの依頼で使える道具が${MAX_TOOL_CALLS}件を超えました`
+	}
+	const addedWrites = toolCalls.filter((call) => fileToolAccess(call.name) === "write").length
+	if (writes + addedWrites > MAX_WRITE_CALLS) {
+		return `1つの依頼で使える書込道具が${MAX_WRITE_CALLS}件を超えました`
+	}
+	return undefined
+}
 
 /**
  * `@mask` に話しかけられたときの処理。
@@ -254,6 +338,11 @@ export function createHandler(deps: ParticipantDeps): vscode.ChatRequestHandler 
 		const masker = deps.masker()
 		const enabled = deps.isEnabled()
 		const restoreWrites = deps.restoreFileWrites?.() === true
+		const configuredFileToolMode = deps.fileToolMode?.() ?? "confirmEdit"
+		const effectiveFileToolMode: FileToolMode = enabled ? configuredFileToolMode : "off"
+		const availableTools = fileToolsForMode(tools, effectiveFileToolMode)
+		const availableToolNames = new Set(availableTools.map((tool) => tool.name))
+		let fileAccessDecision: "approved" | "denied" | undefined
 		const history = await historyMessages(context.history ?? [], openTextDocument)
 		const references = await readReferences(request.references ?? [], openTextDocument)
 		const messages: AgentMessage[] = [
@@ -271,7 +360,8 @@ export function createHandler(deps: ParticipantDeps): vscode.ChatRequestHandler 
 		// **状態を必ず出す。** 切れているのか、伏せるものが無かったのかを、利用者が
 		// 見分けられるようにする。
 		stream.markdown(describeState(enabled, currentText))
-		stream.markdown(describeWriteMode(enabled, restoreWrites))
+		stream.markdown(describeFileToolMode(enabled, configuredFileToolMode))
+		stream.markdown(describeWriteMode(enabled, restoreWrites, effectiveFileToolMode))
 		if (references.texts.length > 0) {
 			stream.markdown(`> 🛡 参照した本文 ${references.texts.length} 件も伏せて送ります。\n\n`)
 		}
@@ -304,9 +394,16 @@ export function createHandler(deps: ParticipantDeps): vscode.ChatRequestHandler 
 		// **区切りをまたいで戻す。** 断片ごとに戻すと、割れて届いた伏せ字が戻らない。
 		const restorer = createStreamRestorer((text) => masker.unmask(text))
 		const modelResponse: string[] = []
+		let totalToolCalls = 0
+		let writeCalls = 0
 
 		for (let round = 0; round < MAX_TOOL_ROUNDS; round++) {
-			const response = await model.sendRequest(modelMessages, { tools: [...tools] }, token)
+			if (token.isCancellationRequested) {
+				stream.markdown(restorer.flush())
+				stream.markdown("\n\n> ⚠️ 利用者が処理を中断しました。")
+				return { metadata: { [MODEL_RESPONSE_METADATA]: modelResponse.join("") } }
+			}
+			const response = await model.sendRequest(modelMessages, { tools: [...availableTools] }, token)
 			const assistantParts: Array<vscode.LanguageModelTextPart | vscode.LanguageModelToolCallPart> = []
 			const toolCalls: ToolCall[] = []
 
@@ -326,20 +423,54 @@ export function createHandler(deps: ParticipantDeps): vscode.ChatRequestHandler 
 				}
 			}
 
+			if (token.isCancellationRequested) {
+				stream.markdown(restorer.flush())
+				stream.markdown("\n\n> ⚠️ 利用者が処理を中断しました。")
+				return { metadata: { [MODEL_RESPONSE_METADATA]: modelResponse.join("") } }
+			}
+
 			if (toolCalls.length === 0) {
 				stream.markdown(restorer.flush())
 				return { metadata: { [MODEL_RESPONSE_METADATA]: modelResponse.join("") } }
 			}
 
+			const limitReason = toolLimitReason(toolCalls, totalToolCalls, writeCalls)
+			if (limitReason) {
+				stream.markdown(restorer.flush())
+				stream.markdown(`\n\n> ⚠️ ${limitReason}。何も実行せず停止しました。`)
+				return { metadata: { [MODEL_RESPONSE_METADATA]: modelResponse.join("") } }
+			}
+			totalToolCalls += toolCalls.length
+			writeCalls += toolCalls.filter((call) => fileToolAccess(call.name) === "write").length
+
 			modelMessages.push(vscode.LanguageModelChatMessage.Assistant(assistantParts))
 			const toolResults: vscode.LanguageModelToolResultPart[] = []
 			for (const call of toolCalls) {
-				stream.progress(`道具を実行しています: ${call.name}`)
 				let raw: string
-				try {
-					raw = await executeTool(call.name, call.input, masker, restoreWrites, token)
-				} catch (error) {
-					raw = `道具を実行できませんでした: ${error instanceof Error ? error.message : String(error)}`
+				if (token.isCancellationRequested) {
+					raw = "利用者が処理を中断しました。"
+				} else if (!availableToolNames.has(call.name)) {
+					raw = `現在のファイル道具モード（${effectiveFileToolMode}）では実行できません: ${call.name}`
+				} else {
+					if (fileToolAccess(call.name) === "read" && fileAccessDecision === undefined) {
+						const approved = await (deps.confirmFileAccess ?? confirmFileAccess)(
+							localConfirmationCall(call, masker),
+						)
+						fileAccessDecision = approved ? "approved" : "denied"
+					}
+
+					if (token.isCancellationRequested) {
+						raw = "利用者が処理を中断しました。"
+					} else if (fileToolAccess(call.name) === "read" && fileAccessDecision === "denied") {
+						raw = "利用者がこの依頼でのファイル参照を許可しませんでした。"
+					} else {
+						stream.progress(`道具を実行しています: ${call.name}`)
+						try {
+							raw = await executeTool(call.name, call.input, masker, restoreWrites, token)
+						} catch (error) {
+							raw = `道具を実行できませんでした: ${error instanceof Error ? error.message : String(error)}`
+						}
+					}
 				}
 
 				// 道具本体が失敗した場合も、例外文にはファイル名や検索語が入り得る。

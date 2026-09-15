@@ -46,6 +46,21 @@
 					"default": false,
 					"markdownDescription": "**Write Restore モード。** `@mask` のファイル道具が書く内容を、ローカルで元の値へ戻します。切なら伏せ字のまま書きます。各回答の先頭に現在のモードを表示します。"
 				},
+				"piiGuard.fileTools.mode": {
+					"type": "string",
+					"enum": [
+						"off",
+						"readOnly",
+						"confirmEdit"
+					],
+					"enumDescriptions": [
+						"ファイル道具を使いません。",
+						"依頼ごとの確認後に一覧・検索・読取だけを許可します。",
+						"依頼ごとの確認後に読取を許可し、書込は呼び出しごとに確認します。"
+					],
+					"default": "confirmEdit",
+					"markdownDescription": "`@mask` に渡すファイル道具の権限です。伏せ字化が切のときは、この設定にかかわらず `off` になります。"
+				},
 				"piiGuard.kinds": {
 					"type": "object",
 					"markdownDescription": "基本検出・辞書・固有名詞検出に共通する、最終的な伏せ字の種類。外した種類は、どの方式で見つけてもそのまま送られます。",

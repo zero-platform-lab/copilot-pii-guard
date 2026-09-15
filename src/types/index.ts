@@ -9,6 +9,10 @@ export type { PiiKind, PiiTerm, NerEntity } from "./pii"
 
 import type { PiiKind, PiiTerm, NerEntity } from "./pii"
 
+/** `@mask` がモデルへ提示し、実行を許可するファイル道具の範囲。 */
+export const fileToolModes = ["off", "readOnly", "confirmEdit"] as const
+export type FileToolMode = (typeof fileToolModes)[number]
+
 /**
  * 伏せ字の設定（`FR-PII-01b` ほか）。
  *
@@ -23,6 +27,10 @@ export type PiiMasking = {
 	/** ファイル道具が書くとき、伏せ字をローカルで元の値へ戻す。既定は戻さない。 */
 	fileWrites?: {
 		restore?: boolean
+	}
+	/** データ変換とは別に、ファイル道具へ与える権限。既定は書込確認つき。 */
+	fileTools?: {
+		mode?: FileToolMode
 	}
 	/** 伏せる種類。省略すると全部。 */
 	kinds?: PiiKind[]

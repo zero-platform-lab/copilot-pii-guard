@@ -301,6 +301,7 @@ describe("伏せてから Copilot へ送る", () => {
 			isEnabled: () => true,
 			selectModel: async () => model as never,
 			tools: [{ name: "pii_guard_read_file", description: "読む" }],
+			confirmFileAccess: async () => true,
 			runTool: async () => "連絡先は hanako@corp.example",
 		})
 
@@ -340,6 +341,7 @@ describe("伏せてから Copilot へ送る", () => {
 			isEnabled: () => true,
 			selectModel: async () => model as never,
 			tools: [{ name: "pii_guard_read_file", description: "読む" }],
+			confirmFileAccess: async () => true,
 			runTool: async () => {
 				throw new Error("hanako@corp.example のファイルを読めません")
 			},
@@ -377,5 +379,287 @@ describe("伏せてから Copilot へ送る", () => {
 		)
 
 		expect(out.parts.join("")).toContain("Write Restore: 入")
+	})
+})
+
+describe("ファイル道具の権限", () => {
+	const declaredTools = [
+		{ name: "pii_guard_read_file", description: "読む" },
+		{ name: "pii_guard_write_file", description: "書く" },
+	]
+
+	function toolModel(calls: Array<{ callId: string; name: string; input: object }>) {
+		const offered: string[][] = []
+		let round = 0
+		return {
+			offered,
+			model: {
+				sendRequest: async (_messages: unknown, options: { tools: Array<{ name: string }> }) => {
+					offered.push(options.tools.map((tool) => tool.name))
+					round++
+					return {
+						stream: (async function* () {
+							if (round === 1) {
+								for (const call of calls) yield call
+							} else {
+								yield { value: "完了" }
+							}
+						})(),
+					}
+				},
+			},
+		}
+	}
+
+	it("confirmEdit は読取と書込を提示する", async () => {
+		const fake = toolModel([])
+		const out = fakeStream()
+		const handler = createHandler({
+			masker: () => new TaskPiiMasker({ enabled: true } as never),
+			isEnabled: () => true,
+			fileToolMode: () => "confirmEdit",
+			selectModel: async () => fake.model as never,
+			tools: declaredTools,
+		})
+
+		await handler({ prompt: "確認" } as never, { history: [] } as never, out.stream as never, {} as never)
+
+		expect(fake.offered[0]).toEqual(["pii_guard_read_file", "pii_guard_write_file"])
+		expect(out.parts.join("")).toContain("ファイル道具: confirmEdit")
+	})
+
+	it("readOnly は書込を提示せず、直接要求されても実行しない", async () => {
+		const fake = toolModel([{ callId: "write-1", name: "pii_guard_write_file", input: { path: "a.txt" } }])
+		const runTool = vi.fn(async () => "書きました")
+		const out = fakeStream()
+		const handler = createHandler({
+			masker: () => new TaskPiiMasker({ enabled: true } as never),
+			isEnabled: () => true,
+			fileToolMode: () => "readOnly",
+			selectModel: async () => fake.model as never,
+			tools: declaredTools,
+			runTool,
+		})
+
+		await handler({ prompt: "書いて" } as never, { history: [] } as never, out.stream as never, {} as never)
+
+		expect(fake.offered[0]).toEqual(["pii_guard_read_file"])
+		expect(runTool).not.toHaveBeenCalled()
+		expect(out.parts.join("")).toContain("ファイル道具: readOnly")
+		expect(out.parts.join("")).toContain("Write Restore: 停止中")
+	})
+
+	it("伏せ字化が切なら道具を提示せず、直接要求されても実行しない", async () => {
+		const fake = toolModel([{ callId: "read-1", name: "pii_guard_read_file", input: { path: "a.txt" } }])
+		const runTool = vi.fn(async () => "秘密")
+		const out = fakeStream()
+		const handler = createHandler({
+			masker: () => new TaskPiiMasker({ enabled: false } as never),
+			isEnabled: () => false,
+			fileToolMode: () => "confirmEdit",
+			selectModel: async () => fake.model as never,
+			tools: declaredTools,
+			runTool,
+		})
+
+		await handler({ prompt: "読んで" } as never, { history: [] } as never, out.stream as never, {} as never)
+
+		expect(fake.offered[0]).toEqual([])
+		expect(runTool).not.toHaveBeenCalled()
+		expect(out.parts.join("")).toContain("ファイル道具: off")
+	})
+
+	it("複数の読取呼び出しでも依頼ごとに1回だけ確認する", async () => {
+		const fake = toolModel([
+			{ callId: "read-1", name: "pii_guard_read_file", input: { path: "a.txt" } },
+			{ callId: "read-2", name: "pii_guard_read_file", input: { path: "b.txt" } },
+		])
+		const confirm = vi.fn(async () => true)
+		const runTool = vi.fn(async () => "本文")
+		const handler = createHandler({
+			masker: () => new TaskPiiMasker({ enabled: true } as never),
+			isEnabled: () => true,
+			fileToolMode: () => "confirmEdit",
+			selectModel: async () => fake.model as never,
+			tools: declaredTools,
+			confirmFileAccess: confirm,
+			runTool,
+		})
+
+		await handler({ prompt: "読んで" } as never, { history: [] } as never, fakeStream().stream as never, {} as never)
+
+		expect(confirm).toHaveBeenCalledOnce()
+		expect(runTool).toHaveBeenCalledTimes(2)
+	})
+
+	it("確認画面では伏せ字のパスをローカルで元へ戻す", async () => {
+		const fake = toolModel([
+			{ callId: "read-1", name: "pii_guard_read_file", input: { path: "{{term-001}}.txt" } },
+		])
+		const seen: object[] = []
+		const handler = createHandler({
+			masker: () =>
+				new TaskPiiMasker({
+					enabled: true,
+					terms: [{ value: "顧客名", kind: "term" }],
+				} as never),
+			isEnabled: () => true,
+			selectModel: async () => fake.model as never,
+			tools: declaredTools,
+			confirmFileAccess: async (call) => {
+				seen.push(call.input)
+				return true
+			},
+			runTool: async () => "本文",
+		})
+
+		await handler(
+			{ prompt: "顧客名.txtを読んで" } as never,
+			{ history: [] } as never,
+			fakeStream().stream as never,
+			{} as never,
+		)
+
+		expect(seen).toEqual([{ path: "顧客名.txt" }])
+	})
+
+	it("前の依頼で許可していても、次の依頼ではもう一度確認する", async () => {
+		let requestCount = 0
+		const model = {
+			sendRequest: async () => {
+				requestCount++
+				return {
+					stream: (async function* () {
+						if (requestCount % 2 === 1) {
+							yield { callId: `read-${requestCount}`, name: "pii_guard_read_file", input: { path: "a.txt" } }
+						} else {
+							yield { value: "完了" }
+						}
+					})(),
+				}
+			},
+		}
+		const confirm = vi.fn(async () => true)
+		const handler = createHandler({
+			masker: () => new TaskPiiMasker({ enabled: true } as never),
+			isEnabled: () => true,
+			selectModel: async () => model as never,
+			tools: declaredTools,
+			confirmFileAccess: confirm,
+			runTool: async () => "本文",
+		})
+
+		await handler({ prompt: "1回目" } as never, { history: [] } as never, fakeStream().stream as never, {} as never)
+		await handler({ prompt: "2回目" } as never, { history: [] } as never, fakeStream().stream as never, {} as never)
+
+		expect(confirm).toHaveBeenCalledTimes(2)
+	})
+
+	it("読取を拒否した依頼では再確認せず、どの読取も実行しない", async () => {
+		const fake = toolModel([
+			{ callId: "read-1", name: "pii_guard_read_file", input: { path: "a.txt" } },
+			{ callId: "read-2", name: "pii_guard_read_file", input: { path: "b.txt" } },
+		])
+		const confirm = vi.fn(async () => false)
+		const runTool = vi.fn(async () => "本文")
+		const handler = createHandler({
+			masker: () => new TaskPiiMasker({ enabled: true } as never),
+			isEnabled: () => true,
+			selectModel: async () => fake.model as never,
+			tools: declaredTools,
+			confirmFileAccess: confirm,
+			runTool,
+		})
+
+		await handler({ prompt: "読んで" } as never, { history: [] } as never, fakeStream().stream as never, {} as never)
+
+		expect(confirm).toHaveBeenCalledOnce()
+		expect(runTool).not.toHaveBeenCalled()
+	})
+
+	it("1回の応答に9件の道具があれば、1件も実行せず停止する", async () => {
+		const fake = toolModel(
+			Array.from({ length: 9 }, (_, index) => ({
+				callId: `read-${index}`,
+				name: "pii_guard_read_file",
+				input: { path: `${index}.txt` },
+			})),
+		)
+		const confirm = vi.fn(async () => true)
+		const runTool = vi.fn(async () => "本文")
+		const out = fakeStream()
+		const handler = createHandler({
+			masker: () => new TaskPiiMasker({ enabled: true } as never),
+			isEnabled: () => true,
+			selectModel: async () => fake.model as never,
+			tools: declaredTools,
+			confirmFileAccess: confirm,
+			runTool,
+		})
+
+		await handler({ prompt: "全部読んで" } as never, { history: [] } as never, out.stream as never, {} as never)
+
+		expect(confirm).not.toHaveBeenCalled()
+		expect(runTool).not.toHaveBeenCalled()
+		expect(out.parts.join("")).toContain("8件を超えました")
+	})
+
+	it("中断済みなら新しい道具を実行しない", async () => {
+		const fake = toolModel([{ callId: "read-1", name: "pii_guard_read_file", input: { path: "a.txt" } }])
+		const confirm = vi.fn(async () => true)
+		const runTool = vi.fn(async () => "本文")
+		const handler = createHandler({
+			masker: () => new TaskPiiMasker({ enabled: true } as never),
+			isEnabled: () => true,
+			selectModel: async () => fake.model as never,
+			tools: declaredTools,
+			confirmFileAccess: confirm,
+			runTool,
+		})
+
+		await handler(
+			{ prompt: "読んで" } as never,
+			{ history: [] } as never,
+			fakeStream().stream as never,
+			{ isCancellationRequested: true } as never,
+		)
+
+		expect(confirm).not.toHaveBeenCalled()
+		expect(runTool).not.toHaveBeenCalled()
+		expect(fake.offered).toEqual([])
+	})
+
+	it("モデル応答中に中断されたら道具を実行せず停止する", async () => {
+		const token = { isCancellationRequested: false }
+		let requests = 0
+		const model = {
+			sendRequest: async () => {
+				requests++
+				return {
+					stream: (async function* () {
+						yield { callId: "read-1", name: "pii_guard_read_file", input: { path: "a.txt" } }
+						token.isCancellationRequested = true
+					})(),
+				}
+			},
+		}
+		const confirm = vi.fn(async () => true)
+		const runTool = vi.fn(async () => "本文")
+		const out = fakeStream()
+		const handler = createHandler({
+			masker: () => new TaskPiiMasker({ enabled: true } as never),
+			isEnabled: () => true,
+			selectModel: async () => model as never,
+			tools: declaredTools,
+			confirmFileAccess: confirm,
+			runTool,
+		})
+
+		await handler({ prompt: "読んで" } as never, { history: [] } as never, out.stream as never, token as never)
+
+		expect(requests).toBe(1)
+		expect(confirm).not.toHaveBeenCalled()
+		expect(runTool).not.toHaveBeenCalled()
+		expect(out.parts.join("")).toContain("処理を中断しました")
 	})
 })
