@@ -1,0 +1,10 @@
+# 束ねたものだけを配る。元のソースと試験は要らない。
+src/**
+node_modules/**
+!dist/node_modules/**
+*.mjs
+*.ts
+tsconfig.json
+vitest.*
+.vscode/**
+**/*.map

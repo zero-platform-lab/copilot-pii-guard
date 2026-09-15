@@ -1,0 +1,241 @@
+{
+	"name": "copilot-pii-guard",
+	"displayName": "PII Guard for Copilot",
+	"description": "Copilot へ送る前に、氏名・社名・連絡先などを伏せ字へ置き換えます。",
+	"version": "0.1.0",
+	"publisher": "internal",
+	"private": true,
+	"license": "Apache-2.0",
+	"engines": {
+		"vscode": "^1.95.0",
+		"node": ">=20"
+	},
+	"categories": [
+		"Chat",
+		"Other"
+	],
+	"activationEvents": [
+		"onStartupFinished"
+	],
+	"main": "./dist/extension.js",
+	"contributes": {
+		"chatParticipants": [
+			{
+				"id": "pii-guard.mask",
+				"name": "mask",
+				"fullName": "PII Guard",
+				"description": "伏せてから Copilot へ送ります",
+				"isSticky": true
+			}
+		],
+		"configuration": {
+			"title": "PII Guard",
+			"properties": {
+				"piiGuard.enabled": {
+					"type": "boolean",
+					"default": true,
+					"description": "@mask へ送る文を伏せ字へ置き換えます。"
+				},
+				"piiGuard.restore": {
+					"type": "boolean",
+					"default": true,
+					"description": "応答の伏せ字を元の値へ戻して表示します。切ると {{person-001}} のまま表示します。"
+				},
+				"piiGuard.kinds": {
+					"type": "array",
+					"items": {
+						"type": "string",
+						"enum": [
+							"email",
+							"phone",
+							"address",
+							"postal",
+							"person",
+							"org",
+							"card",
+							"mynumber",
+							"secret",
+							"url",
+							"path",
+							"ip",
+							"term"
+						]
+					},
+					"default": [
+						"email",
+						"phone",
+						"address",
+						"postal",
+						"person",
+						"org",
+						"card",
+						"mynumber",
+						"secret",
+						"url",
+						"path",
+						"ip",
+						"term"
+					],
+					"description": "伏せる種類。外した種類はそのまま送られます。"
+				},
+				"piiGuard.terms": {
+					"type": "array",
+					"default": [],
+					"description": "必ず伏せる語。完全一致なので取りこぼしません。",
+					"items": {
+						"type": "object",
+						"properties": {
+							"value": {
+								"type": "string"
+							},
+							"kind": {
+								"type": "string",
+								"enum": [
+									"person",
+									"org",
+									"term"
+								]
+							},
+							"regex": {
+								"type": "boolean",
+								"description": "真なら value を正規表現として扱います。"
+							}
+						},
+						"required": [
+							"value"
+						]
+					}
+				},
+				"piiGuard.dictionaryPaths": {
+					"type": "array",
+					"items": {
+						"type": "string"
+					},
+					"default": [],
+					"description": "辞書のファイル。空なら ~/.agent/pii-dictionary.txt を見ます。"
+				},
+				"piiGuard.secretLabels": {
+					"type": "array",
+					"items": {
+						"type": "string"
+					},
+					"default": [],
+					"description": "鍵のラベルに足す語。社内で使う語を並べます。"
+				},
+				"piiGuard.properNouns.enabled": {
+					"type": "boolean",
+					"default": false,
+					"description": "固有名詞の検出（第 2 層）を使います。モデルのファイルを別に置く必要があります（約 282 MB）。"
+				},
+				"piiGuard.properNouns.entities": {
+					"type": "array",
+					"items": {
+						"type": "string",
+						"enum": [
+							"PER",
+							"ORG",
+							"ORG-P",
+							"ORG-O",
+							"LOC",
+							"INS",
+							"PRD",
+							"EVT"
+						]
+					},
+					"default": [
+						"PER",
+						"ORG",
+						"ORG-P",
+						"ORG-O",
+						"LOC",
+						"INS"
+					],
+					"description": "伏せる区分。PRD（製品名）を入れると技術の話が読めなくなります。"
+				},
+				"piiGuard.properNouns.minScore": {
+					"type": "number",
+					"default": 0.9,
+					"minimum": 0,
+					"maximum": 1,
+					"description": "確度の下限。下げると誤検出が入ります。誤検出は取りこぼしより害が大きいものです。"
+				},
+				"piiGuard.properNouns.timeBudgetMs": {
+					"type": "number",
+					"default": 3000,
+					"minimum": 0,
+					"description": "判定にかけてよい時間（ミリ秒）。0 と書くと、終わるまで待ちます。"
+				},
+				"piiGuard.properNouns.modelPath": {
+					"type": "string",
+					"default": "",
+					"description": "モデルの置き場所。空なら ~/.agent/pii-ner を見ます。"
+				},
+				"piiGuard.properNouns.modelUrl": {
+					"type": "string",
+					"default": "",
+					"description": "モデルの取得先。既定の取得先は持ちません。空なら取得しません。"
+				}
+			}
+		},
+		"commands": [
+			{
+				"command": "piiGuard.maskFile",
+				"title": "このファイルの個人情報を伏せる",
+				"category": "PII Guard"
+			},
+			{
+				"command": "piiGuard.restoreFile",
+				"title": "伏せ字を元の値へ戻す",
+				"category": "PII Guard"
+			},
+			{
+				"command": "piiGuard.addToDictionary",
+				"title": "選んだ語を辞書へ足す",
+				"category": "PII Guard"
+			},
+			{
+				"command": "piiGuard.exportDictionary",
+				"title": "辞書を書き出す",
+				"category": "PII Guard"
+			}
+		],
+		"menus": {
+			"editor/context": [
+				{
+					"command": "piiGuard.maskFile",
+					"group": "9_pii@1"
+				},
+				{
+					"command": "piiGuard.restoreFile",
+					"group": "9_pii@2"
+				},
+				{
+					"command": "piiGuard.addToDictionary",
+					"when": "editorHasSelection",
+					"group": "9_pii@3"
+				}
+			]
+		}
+	},
+	"scripts": {
+		"check-types": "tsc --noEmit",
+		"bundle": "node esbuild.mjs",
+		"test": "vitest run",
+		"vsix": "node package-vsix.mjs universal linux-x64 win32-x64",
+		"vscode:prepublish": "node esbuild.mjs --production"
+	},
+	"dependencies": {
+		"@huggingface/transformers": "^4.2.0",
+		"onnxruntime-node": "^1.23.0",
+		"undici": "^7.0.0"
+	},
+	"devDependencies": {
+		"@types/node": "^22.0.0",
+		"@types/vscode": "^1.95.0",
+		"esbuild": "^0.25.0",
+		"nock": "^14.0.0",
+		"typescript": "^5.6.0",
+		"vitest": "^3.0.0",
+		"@vscode/vsce": "^3.0.0"
+	}
+}
