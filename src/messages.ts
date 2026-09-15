@@ -8,6 +8,7 @@ const MESSAGES: Record<string, string> = {
 	"common:pii.noVault": "戻せる伏せ字がありません。",
 	"common:pii.nothingToRestore": "このファイルに伏せ字はありません。",
 	"common:pii.nothingFound": "伏せる個人情報は見つかりませんでした。",
+	"common:pii.found": "{{summary}} が見つかりました。ファイルは変更していません。",
 	"common:pii.replaceFailed": "置き換えられませんでした。",
 	"common:pii.restored": "元の値へ戻しました。",
 	"common:pii.replaced": "{{summary}} を伏せました。",

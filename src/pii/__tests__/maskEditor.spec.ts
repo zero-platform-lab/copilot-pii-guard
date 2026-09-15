@@ -56,7 +56,12 @@ vi.mock("../../messages", () => ({
 }))
 
 import { createAllocator } from "../maskText"
-import { describeCounts, maskSecretsInActiveEditor, restoreSecretsInActiveEditor } from "../maskEditor"
+import {
+	checkSecretsInActiveEditor,
+	describeCounts,
+	maskSecretsInActiveEditor,
+	restoreSecretsInActiveEditor,
+} from "../maskEditor"
 
 const editorWith = (text: string, selection?: { start: number; end: number }) => ({
 	document: {
@@ -87,6 +92,29 @@ describe("describeCounts", () => {
 
 	it("0 件の種類は出さない", () => {
 		expect(describeCounts({ email: 1, address: 0 })).toBe("common:pii.kind.email 1")
+	})
+})
+
+describe("checkSecretsInActiveEditor", () => {
+	it("見つかった種類と件数を表示するだけで、ファイルを変更しない", async () => {
+		mocks.activeTextEditor = editorWith("taro@corp.example と 03-1234-5678")
+
+		await checkSecretsInActiveEditor({ kinds: ["email", "phone"] })
+
+		expect(mocks.showInformationMessage).toHaveBeenCalledExactlyOnceWith(
+			'common:pii.found:{"summary":"common:pii.kind.email 1、common:pii.kind.phone 1"}',
+		)
+		expect(mocks.showWarningMessage).not.toHaveBeenCalled()
+		expect(mocks.applyEdit).not.toHaveBeenCalled()
+	})
+
+	it("見つからない場合もファイルを変更しない", async () => {
+		mocks.activeTextEditor = editorWith("ふつうの文章")
+
+		await checkSecretsInActiveEditor()
+
+		expect(mocks.showInformationMessage).toHaveBeenCalledExactlyOnceWith("common:pii.nothingFound")
+		expect(mocks.applyEdit).not.toHaveBeenCalled()
 	})
 })
 

@@ -43,6 +43,70 @@ export function describeCounts(counts: Partial<Record<PiiKind, number>>): string
 		.join("、")
 }
 
+type Inspection = {
+	document: vscode.TextDocument
+	version: number
+	matches: ReturnType<typeof findPii>
+	counts: Partial<Record<PiiKind, number>>
+}
+
+/** 確認と置き換えで、検出条件が食い違わないようにする。ここでは文書を変更しない。 */
+async function inspectActiveEditor(
+	settings: MaskEditorSettings,
+	properNounsFor?: (texts: readonly string[]) => Promise<MaskOptions["properNouns"]>,
+): Promise<Inspection | undefined> {
+	const editor = vscode.window.activeTextEditor
+	if (!editor) {
+		await vscode.window.showInformationMessage(t("common:pii.noEditor"))
+		return undefined
+	}
+
+	const document = editor.document
+	const text = document.getText()
+	const version = document.version
+	const dictionary = await readDictionaries(settings.dictionaryPaths ?? [])
+	const troubles = [
+		...dictionary.failures.map((one) => one.path),
+		...dictionary.problems.map((one) => `${one.path}:${one.line} ${one.value}`),
+	]
+	if (troubles.length > 0) {
+		await vscode.window.showWarningMessage(t("common:pii.dictionaryFailed", { paths: troubles.join(", ") }))
+	}
+
+	const selection = editor.selection
+	const range = selection.isEmpty
+		? undefined
+		: { start: document.offsetAt(selection.start), end: document.offsetAt(selection.end) }
+	const options = {
+		terms: [...(settings.terms ?? []), ...dictionary.terms],
+		kinds: settings.kinds,
+		secretLabels: settings.secretLabels,
+	}
+	const properNouns = await properNounsFor?.([text])
+	const matches = findPii(text, { ...options, properNouns }).filter(
+		(match) => range === undefined || (match.start >= range.start && match.end <= range.end),
+	)
+	const counts: Partial<Record<PiiKind, number>> = {}
+	for (const match of matches) counts[match.kind] = (counts[match.kind] ?? 0) + 1
+
+	return { document, version, matches, counts }
+}
+
+/** 開いているファイルを変更せず、現在の設定で検出される件数だけを知らせる。 */
+export async function checkSecretsInActiveEditor(
+	settings: MaskEditorSettings = {},
+	properNounsFor?: (texts: readonly string[]) => Promise<MaskOptions["properNouns"]>,
+): Promise<void> {
+	const inspected = await inspectActiveEditor(settings, properNounsFor)
+	if (!inspected) return
+	if (inspected.matches.length === 0) {
+		await vscode.window.showInformationMessage(t("common:pii.nothingFound"))
+		return
+	}
+
+	await vscode.window.showInformationMessage(t("common:pii.found", { summary: describeCounts(inspected.counts) }))
+}
+
 /**
  * 開いているファイルの伏せ字を元の値へ戻す（`FR-PII-20`）。
  *
@@ -106,53 +170,9 @@ export async function maskSecretsInActiveEditor(
 	 */
 	properNounsFor?: (texts: readonly string[]) => Promise<MaskOptions["properNouns"]>,
 ): Promise<void> {
-	const editor = vscode.window.activeTextEditor
-	if (!editor) {
-		await vscode.window.showInformationMessage(t("common:pii.noEditor"))
-		return
-	}
-
-	const document = editor.document
-	const text = document.getText()
-	// **版を控える。** 待ちの間に文書が変わると、ここで求めた位置は別の場所を指す。
-	// 当てる直前に確かめ、変わっていたらやり直してもらう。
-	const version = document.version
-
-	// 辞書が読めなくても、ほかの種類の置き換えは続ける（`FR-PII-03d`）。
-	const dictionary = await readDictionaries(settings.dictionaryPaths ?? [])
-	// **読めなかった行も出す**（`FR-PII-03g`）。書き間違えた正規表現を黙って飛ばすと、
-	// その語は 1 件も一致しないのに、利用者は伏せたつもりになる。
-	const troubles = [
-		...dictionary.failures.map((one) => one.path),
-		...dictionary.problems.map((one) => `${one.path}:${one.line} ${one.value}`),
-	]
-	if (troubles.length > 0) {
-		await vscode.window.showWarningMessage(t("common:pii.dictionaryFailed", { paths: troubles.join(", ") }))
-	}
-
-	// 選択している範囲があるときは、その中だけを対象にする（`FR-PII-11a`）。
-	const selection = editor.selection
-	const range = selection.isEmpty
-		? undefined
-		: { start: document.offsetAt(selection.start), end: document.offsetAt(selection.end) }
-
-	const options = {
-		terms: [...(settings.terms ?? []), ...dictionary.terms],
-		kinds: settings.kinds,
-		secretLabels: settings.secretLabels,
-	}
-
-	// 第 2 層も通す。会話と同じものを伏せるためである。
-	const properNouns = await properNounsFor?.([text])
-
-	// **検出は 1 回だけにする。** 数えるのに番号は要らない。全部の正規表現と 1,863 件の
-	// 地名の照合を、確認の前後で二度走らせない。
-	const matches = findPii(text, { ...options, properNouns }).filter(
-		(match) => range === undefined || (match.start >= range.start && match.end <= range.end),
-	)
-
-	const counts: Partial<Record<PiiKind, number>> = {}
-	for (const match of matches) counts[match.kind] = (counts[match.kind] ?? 0) + 1
+	const inspected = await inspectActiveEditor(settings, properNounsFor)
+	if (!inspected) return
+	const { document, version, matches, counts } = inspected
 
 	if (matches.length === 0) {
 		await vscode.window.showInformationMessage(t("common:pii.nothingFound"))

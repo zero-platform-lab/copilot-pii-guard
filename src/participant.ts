@@ -14,6 +14,7 @@ import type { TaskPiiMasker } from "./pii/TaskPiiMasker"
 import { createStreamRestorer } from "./stream"
 import { t } from "./messages"
 import type { AgentMessage } from "./types"
+import { FILE_TOOLS, runFileTool } from "./fileTools"
 
 /** 履歴へ残す、モデルが実際に返した本文。状態表示を次の依頼へ混ぜないために使う。 */
 const MODEL_RESPONSE_METADATA = "piiGuard.modelResponse"
@@ -73,15 +74,35 @@ export function describeState(enabled: boolean, maskedText: string): string {
 		: "> 🛡 伏せるものは見つかりませんでした。\n\n"
 }
 
+/** ファイル道具がディスクへ書くときの状態。安全側の既定は伏せ字のまま。 */
+export function describeWriteMode(enabled: boolean, restore: boolean): string {
+	if (!enabled) return "> ⚠️ **書込保護: 切** ファイル道具も生の内容を書きます。\n\n"
+	return restore
+		? "> ⚠️ **Write Restore: 入** ファイル道具は元の値へ戻して書きます。\n\n"
+		: "> 🛡 **Write Restore: 切** ファイル道具は伏せ字のまま書きます。\n\n"
+}
+
 export type ParticipantDeps = {
 	/** いまの設定で伏せる仕掛け。呼ばれるたびに設定を読み直す。 */
 	masker: () => TaskPiiMasker
 	/** 伏せる設定が入っているか。切なら、そのことを画面へ出す。 */
 	isEnabled: () => boolean
+	/** ファイル道具の書き込みを元の値へ戻すか。既定は戻さない。 */
+	restoreFileWrites?: () => boolean
 	/** 使うモデルを選ぶ。既定は Copilot のもの。 */
 	selectModel?: () => Promise<vscode.LanguageModelChat | undefined>
 	/** 参照した文書を読む。試験では、実ファイルを開かずに差し替える。 */
 	openTextDocument?: (uri: vscode.Uri) => Thenable<vscode.TextDocument>
+	/** 試験用の道具一覧。既定はPII Guard自身のファイル道具。 */
+	tools?: readonly vscode.LanguageModelChatTool[]
+	/** 試験用の道具実行境界。返り値は呼び出し側でもう一度伏せる。 */
+	runTool?: (
+		name: string,
+		input: object,
+		masker: TaskPiiMasker,
+		restoreWrites: boolean,
+		token: vscode.CancellationToken,
+	) => Promise<string>
 }
 
 type ReferenceText = { label: string; text: string }
@@ -198,6 +219,23 @@ async function defaultModel(): Promise<vscode.LanguageModelChat | undefined> {
 	return model
 }
 
+type ToolCall = { callId: string; name: string; input: object }
+
+function toolCallFrom(part: unknown): ToolCall | undefined {
+	if (typeof part !== "object" || part === null) return undefined
+	if (!("callId" in part) || !("name" in part) || !("input" in part)) return undefined
+	if (typeof part.callId !== "string" || typeof part.name !== "string") return undefined
+	if (typeof part.input !== "object" || part.input === null) return undefined
+	return part as ToolCall
+}
+
+function textFromPart(part: unknown): string | undefined {
+	if (typeof part !== "object" || part === null || !("value" in part)) return undefined
+	return typeof part.value === "string" ? part.value : undefined
+}
+
+const MAX_TOOL_ROUNDS = 12
+
 /**
  * `@mask` に話しかけられたときの処理。
  *
@@ -205,11 +243,17 @@ async function defaultModel(): Promise<vscode.LanguageModelChat | undefined> {
  * **戻してから出す。** 戻さないと、画面に `{{person-001}}` が並んで読めない。
  */
 export function createHandler(deps: ParticipantDeps): vscode.ChatRequestHandler {
-	const selectModel = deps.selectModel ?? defaultModel
 	const openTextDocument = deps.openTextDocument ?? vscode.workspace.openTextDocument
+	const tools = deps.tools ?? FILE_TOOLS
+	const executeTool =
+		deps.runTool ??
+		((name, input, masker, restoreWrites, token) =>
+			runFileTool(name, input, masker, { restoreWrites, token }))
 
 	return async (request, context, stream, token) => {
 		const masker = deps.masker()
+		const enabled = deps.isEnabled()
+		const restoreWrites = deps.restoreFileWrites?.() === true
 		const history = await historyMessages(context.history ?? [], openTextDocument)
 		const references = await readReferences(request.references ?? [], openTextDocument)
 		const messages: AgentMessage[] = [
@@ -226,7 +270,8 @@ export function createHandler(deps: ParticipantDeps): vscode.ChatRequestHandler 
 
 		// **状態を必ず出す。** 切れているのか、伏せるものが無かったのかを、利用者が
 		// 見分けられるようにする。
-		stream.markdown(describeState(deps.isEnabled(), currentText))
+		stream.markdown(describeState(enabled, currentText))
+		stream.markdown(describeWriteMode(enabled, restoreWrites))
 		if (references.texts.length > 0) {
 			stream.markdown(`> 🛡 参照した本文 ${references.texts.length} 件も伏せて送ります。\n\n`)
 		}
@@ -243,7 +288,7 @@ export function createHandler(deps: ParticipantDeps): vscode.ChatRequestHandler 
 			stream.markdown(`> ⚠️ ${t("common:pii.maskingTrouble", { detail: trouble })}\n\n`)
 		}
 
-		const model = await selectModel()
+		const model = deps.selectModel ? await deps.selectModel() : request.model ?? (await defaultModel())
 		if (!model) {
 			// **理由を名指しで出す。** 「使えません」だけだと、入っていないのか、
 			// サインインしていないのかが分からない。
@@ -255,18 +300,60 @@ export function createHandler(deps: ParticipantDeps): vscode.ChatRequestHandler 
 			return
 		}
 
-		const response = await model.sendRequest(toModelMessages(masked.messages), {}, token)
-
+		const modelMessages = toModelMessages(masked.messages)
 		// **区切りをまたいで戻す。** 断片ごとに戻すと、割れて届いた伏せ字が戻らない。
 		const restorer = createStreamRestorer((text) => masker.unmask(text))
 		const modelResponse: string[] = []
-		for await (const fragment of response.text) {
-			modelResponse.push(fragment)
-			stream.markdown(restorer.push(fragment))
-		}
-		stream.markdown(restorer.flush())
 
-		// 次の要求では画面用の状態表示ではなく、モデルの応答本文だけを履歴へ戻す。
+		for (let round = 0; round < MAX_TOOL_ROUNDS; round++) {
+			const response = await model.sendRequest(modelMessages, { tools: [...tools] }, token)
+			const assistantParts: Array<vscode.LanguageModelTextPart | vscode.LanguageModelToolCallPart> = []
+			const toolCalls: ToolCall[] = []
+
+			for await (const part of response.stream) {
+				const text = textFromPart(part)
+				if (text !== undefined) {
+					assistantParts.push(new vscode.LanguageModelTextPart(text))
+					modelResponse.push(text)
+					stream.markdown(restorer.push(text))
+					continue
+				}
+
+				const call = toolCallFrom(part)
+				if (call) {
+					assistantParts.push(part as vscode.LanguageModelToolCallPart)
+					toolCalls.push(call)
+				}
+			}
+
+			if (toolCalls.length === 0) {
+				stream.markdown(restorer.flush())
+				return { metadata: { [MODEL_RESPONSE_METADATA]: modelResponse.join("") } }
+			}
+
+			modelMessages.push(vscode.LanguageModelChatMessage.Assistant(assistantParts))
+			const toolResults: vscode.LanguageModelToolResultPart[] = []
+			for (const call of toolCalls) {
+				stream.progress(`道具を実行しています: ${call.name}`)
+				let raw: string
+				try {
+					raw = await executeTool(call.name, call.input, masker, restoreWrites, token)
+				} catch (error) {
+					raw = `道具を実行できませんでした: ${error instanceof Error ? error.message : String(error)}`
+				}
+
+				// 道具本体が失敗した場合も、例外文にはファイル名や検索語が入り得る。
+				// 成否にかかわらず、この境界でもう一度伏せる。
+				const result = (await masker.maskPrompt(raw)).text
+				toolResults.push(
+					new vscode.LanguageModelToolResultPart(call.callId, [new vscode.LanguageModelTextPart(result)]),
+				)
+			}
+			modelMessages.push(vscode.LanguageModelChatMessage.User(toolResults))
+		}
+
+		stream.markdown(restorer.flush())
+		stream.markdown("\n\n> ⚠️ 道具の実行回数が上限に達したため停止しました。")
 		return { metadata: { [MODEL_RESPONSE_METADATA]: modelResponse.join("") } }
 	}
 }

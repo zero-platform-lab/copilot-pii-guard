@@ -45,9 +45,25 @@ export class Uri {
 	static file = (path: string) => ({ fsPath: path, path })
 }
 export const ProgressLocation = { Notification: 15 }
+export class LanguageModelTextPart {
+	constructor(public value: string) {}
+}
+export class LanguageModelToolCallPart {
+	constructor(
+		public callId: string,
+		public name: string,
+		public input: object,
+	) {}
+}
+export class LanguageModelToolResultPart {
+	constructor(
+		public callId: string,
+		public content: unknown[],
+	) {}
+}
 export const LanguageModelChatMessage = {
-	User: (text: string) => ({ role: 1, content: text }),
-	Assistant: (text: string) => ({ role: 2, content: text }),
+	User: (content: unknown) => ({ role: 1, content }),
+	Assistant: (content: unknown) => ({ role: 2, content }),
 }
 export class MarkdownString {
 	value = ""

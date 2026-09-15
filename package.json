@@ -41,6 +41,11 @@
 					"default": true,
 					"description": "応答の伏せ字を元の値へ戻して表示します。切ると {{person-001}} のまま表示します。"
 				},
+				"piiGuard.fileWrites.restore": {
+					"type": "boolean",
+					"default": false,
+					"markdownDescription": "**Write Restore モード。** `@mask` のファイル道具が書く内容を、ローカルで元の値へ戻します。切なら伏せ字のまま書きます。各回答の先頭に現在のモードを表示します。"
+				},
 				"piiGuard.kinds": {
 					"type": "object",
 					"markdownDescription": "基本検出・辞書・固有名詞検出に共通する、最終的な伏せ字の種類。外した種類は、どの方式で見つけてもそのまま送られます。",
@@ -262,6 +267,11 @@
 		},
 		"commands": [
 			{
+				"command": "piiGuard.checkFile",
+				"title": "このファイルの個人情報を確認する",
+				"category": "PII Guard"
+			},
+			{
 				"command": "piiGuard.maskFile",
 				"title": "このファイルの個人情報を伏せる",
 				"category": "PII Guard"
@@ -301,12 +311,16 @@
 			],
 			"piiGuard.editor": [
 				{
-					"command": "piiGuard.maskFile",
+					"command": "piiGuard.checkFile",
 					"group": "1_mask@1"
 				},
 				{
-					"command": "piiGuard.restoreFile",
+					"command": "piiGuard.maskFile",
 					"group": "1_mask@2"
+				},
+				{
+					"command": "piiGuard.restoreFile",
+					"group": "1_mask@3"
 				},
 				{
 					"command": "piiGuard.addToDictionary",

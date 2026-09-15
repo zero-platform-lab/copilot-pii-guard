@@ -62,6 +62,12 @@ describe("チェックの形を、名前の並びへ変える", () => {
 
 		expect(settings.properNouns?.retryCount).toBe(3)
 	})
+
+	it("Write Restore モードを読む", () => {
+		const settings = withConfig({ "fileWrites.restore": true })
+
+		expect(settings.fileWrites?.restore).toBe(true)
+	})
 })
 
 describe("package.json と食い違わない", () => {

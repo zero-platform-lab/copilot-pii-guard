@@ -54,8 +54,10 @@ describe("モデルへ送る箇所", () => {
 		// **生の文を送らない。** `request.prompt` をそのまま渡す枝があれば、伏せ字は
 		// 素通りする。画面には何も出ないので、気づく手がかりが 1 つも無い。
 		const source = await fs.readFile(path.join(SRC, "participant.ts"), "utf8")
-		expect(source).toContain("model.sendRequest(toModelMessages(masked.messages)")
+		expect(source).toContain("const modelMessages = toModelMessages(masked.messages)")
+		expect(source).toContain("model.sendRequest(modelMessages")
 		expect(source).toContain('masker.maskForRequest("", messages)')
+		expect(source).toContain("const result = (await masker.maskPrompt(raw)).text")
 		expect(source).not.toMatch(/User\(request\.prompt\)/)
 	})
 
@@ -76,7 +78,7 @@ describe("応答を画面へ出す箇所", () => {
 		// **断片をそのまま出さない。** 出すと、割れて届いた伏せ字が戻らないまま画面に
 		// 並ぶ。`{{person-001}}` を読まされる。
 		expect(source).not.toMatch(/stream\.markdown\(fragment\)/)
-		expect(source).toContain("restorer.push(fragment)")
+		expect(source).toContain("restorer.push(text)")
 		// 握っているぶんを出し忘れると、応答の末尾が消える。
 		expect(source).toContain("restorer.flush()")
 	})
