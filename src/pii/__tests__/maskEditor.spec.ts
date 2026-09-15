@@ -72,7 +72,7 @@ const editorWith = (text: string, selection?: { start: number; end: number }) =>
 })
 
 /** 確認の問いに「置き換える」と答える。 */
-const answerConfirm = () => mocks.showWarningMessage.mockResolvedValueOnce("common:pii.confirmReplace")
+const answerConfirm = () => mocks.showWarningMessage.mockResolvedValueOnce("common:pii.replace")
 
 beforeEach(() => {
 	vi.clearAllMocks()
@@ -182,7 +182,7 @@ describe("maskSecretsInActiveEditor", () => {
 		// 確認の最中に整形が走った、という状況を作る。
 		mocks.showWarningMessage.mockImplementationOnce(async () => {
 			editor.document.version = 2
-			return "common:pii.confirmReplace"
+			return "common:pii.replace"
 		})
 
 		await maskSecretsInActiveEditor({ kinds: ["email"] })

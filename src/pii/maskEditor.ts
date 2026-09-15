@@ -160,9 +160,9 @@ export async function maskSecretsInActiveEditor(
 	}
 
 	// 戻せない操作なので、確認を挟む。件数は種類ごとに出す。
-	const confirm = t("common:pii.confirmReplace")
+	const confirm = t("common:pii.replace")
 	const answer = await vscode.window.showWarningMessage(
-		t("common:pii.confirm", { summary: describeCounts(counts) }),
+		t("common:pii.confirmMask", { detail: describeCounts(counts) }),
 		{ modal: true },
 		confirm,
 	)
