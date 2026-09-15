@@ -2,7 +2,7 @@
 	"name": "copilot-pii-guard",
 	"displayName": "PII Guard for Copilot",
 	"description": "Copilot へ送る前に、氏名・社名・連絡先などを伏せ字へ置き換えます。",
-	"version": "0.2.0",
+	"version": "0.2.1",
 	"publisher": "internal",
 	"private": true,
 	"license": "Apache-2.0",
@@ -237,7 +237,7 @@
 				},
 				"piiGuard.properNouns.timeBudgetMs": {
 					"type": "number",
-					"default": 3000,
+					"default": 10000,
 					"minimum": 0,
 					"description": "判定にかけてよい時間（ミリ秒）。0 と書くと、終わるまで待ちます。"
 				},
