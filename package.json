@@ -2,7 +2,7 @@
 	"name": "copilot-pii-guard",
 	"displayName": "PII Guard for Copilot",
 	"description": "Copilot へ送る前に、氏名・社名・連絡先などを伏せ字へ置き換えます。",
-	"version": "0.1.0",
+	"version": "0.1.1",
 	"publisher": "internal",
 	"private": true,
 	"license": "Apache-2.0",
@@ -196,6 +196,16 @@
 			{
 				"command": "piiGuard.exportDictionary",
 				"title": "辞書を書き出す",
+				"category": "PII Guard"
+			},
+			{
+				"command": "piiGuard.fetchModel",
+				"title": "モデルを取得する",
+				"category": "PII Guard"
+			},
+			{
+				"command": "piiGuard.modelStatus",
+				"title": "モデルの置き場所を確かめる",
 				"category": "PII Guard"
 			}
 		],

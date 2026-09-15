@@ -11,6 +11,7 @@ import { addSelectionToDictionary, exportDictionary } from "./pii/dictionaryEdit
 import { sessionVault } from "./pii/maskConversation"
 import { createHandler } from "./participant"
 import { readSettings } from "./settings"
+import { fetchModelCommand, showModelStatus } from "./model"
 import { t } from "./messages"
 
 /**
@@ -49,6 +50,8 @@ export function activate(context: vscode.ExtensionContext): void {
 		vscode.commands.registerCommand("piiGuard.exportDictionary", () =>
 			exportDictionary(readSettings()),
 		),
+		vscode.commands.registerCommand("piiGuard.fetchModel", fetchModelCommand),
+		vscode.commands.registerCommand("piiGuard.modelStatus", showModelStatus),
 	)
 
 	// **理由は黙らせない。** 辞書が読めない、第 2 層が動かない、といったことは画面が
