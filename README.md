@@ -110,7 +110,7 @@ VS Code の設定で `piiGuard` を検索する。
 | `piiGuard.terms` | 空 | 必ず伏せる語。**ここに書いたものは取りこぼさない** |
 | `piiGuard.dictionaryPaths` | 空 | 辞書のファイル。空なら `~/.agent/pii-dictionary.txt` |
 | `piiGuard.properNouns.enabled` | 切 | 第 2 層を使うか |
-| `piiGuard.properNouns.timeBudgetMs` | 3000 | 判定の上限（ミリ秒）。**0 なら待ち続ける** |
+| `piiGuard.properNouns.timeBudgetMs` | 10000 | 判定の上限（ミリ秒）。**0 なら待ち続ける** |
 | `piiGuard.properNouns.modelPath` | 空 | モデルの置き場所。空なら `~/.agent/pii-ner` |
 | `piiGuard.properNouns.modelUrl` | 空 | モデルの取得先。**既定の取得先は持たない** |
 | `piiGuard.kinds` | 全部入 | 伏せる種類。**チェックで選ぶ**（12 種類） |
