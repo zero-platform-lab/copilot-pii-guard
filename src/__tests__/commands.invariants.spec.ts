@@ -42,11 +42,17 @@ describe("コマンドの並びと登録が一致する", () => {
 		expect(hidden, `一覧に出ない: ${hidden.join(", ")}`).toEqual([])
 	})
 
-	it("右クリックに並べたものが、コマンドとして存在する", async () => {
+	it("右クリックの PII Guard サブメニューに並べたものが、コマンドとして存在する", async () => {
 		const manifest = JSON.parse(await fs.readFile(path.join(ROOT, "package.json"), "utf8"))
 		const names = await declared()
-		const inMenu = manifest.contributes.menus["editor/context"].map((one: { command: string }) => one.command)
+		const submenu = manifest.contributes.submenus.find((one: { id: string }) => one.id === "piiGuard.editor")
+		const parent = manifest.contributes.menus["editor/context"].find(
+			(one: { submenu?: string }) => one.submenu === "piiGuard.editor",
+		)
+		const inMenu = manifest.contributes.menus["piiGuard.editor"].map((one: { command: string }) => one.command)
 
+		expect(submenu).toMatchObject({ id: "piiGuard.editor", label: "PII Guard" })
+		expect(parent).toBeDefined()
 		expect(inMenu.filter((one: string) => !names.includes(one))).toEqual([])
 	})
 
