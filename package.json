@@ -2,7 +2,7 @@
 	"name": "copilot-pii-guard",
 	"displayName": "PII Guard for Copilot",
 	"description": "Copilot へ送る前に、氏名・社名・連絡先などを伏せ字へ置き換えます。",
-	"version": "0.2.4",
+	"version": "0.2.5",
 	"publisher": "internal",
 	"private": true,
 	"license": "Apache-2.0",
