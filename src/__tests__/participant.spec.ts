@@ -38,8 +38,8 @@ function fakeModel(reply: string[]) {
 			sendRequest: async (messages: { content: string }[]) => {
 				seen.push(...messages.map((one) => one.content))
 				return {
-					text: (async function* () {
-						for (const one of reply) yield one
+					stream: (async function* () {
+						for (const one of reply) yield { value: one }
 					})(),
 				}
 			},
@@ -50,7 +50,7 @@ function fakeModel(reply: string[]) {
 /** 画面へ出た文を集める。 */
 function fakeStream() {
 	const parts: string[] = []
-	return { parts, stream: { markdown: (text: string) => parts.push(text) } }
+	return { parts, stream: { markdown: (text: string) => parts.push(text), progress: vi.fn() } }
 }
 
 async function ask(settings: object, reply: string[] = ["わかりました"], references: unknown[] = []) {
@@ -275,5 +275,107 @@ describe("伏せてから Copilot へ送る", () => {
 		)
 
 		expect(fake.seen).toEqual(["最初の依頼", "モデルの回答", "続きを書いて"])
+	})
+
+	it("ファイル道具の結果も伏せてからモデルへ返す", async () => {
+		const requests: Array<Array<{ role: number; content: unknown }>> = []
+		let round = 0
+		const model = {
+			sendRequest: async (messages: Array<{ role: number; content: unknown }>) => {
+				requests.push(messages)
+				round++
+				return {
+					stream: (async function* () {
+						if (round === 1) {
+							yield { callId: "call-1", name: "pii_guard_read_file", input: { path: "customer.txt" } }
+						} else {
+							yield { value: "読みました" }
+						}
+					})(),
+				}
+			},
+		}
+		const out = fakeStream()
+		const handler = createHandler({
+			masker: () => new TaskPiiMasker({ enabled: true } as never),
+			isEnabled: () => true,
+			selectModel: async () => model as never,
+			tools: [{ name: "pii_guard_read_file", description: "読む" }],
+			runTool: async () => "連絡先は hanako@corp.example",
+		})
+
+		await handler(
+			{ prompt: "customer.txtを読んで", references: [] } as never,
+			{ history: [] } as never,
+			out.stream as never,
+			{} as never,
+		)
+
+		expect(requests).toHaveLength(2)
+		const second = JSON.stringify(requests[1])
+		expect(second).toContain("{{email-001}}")
+		expect(second).not.toContain("hanako@corp.example")
+	})
+
+	it("ファイル道具のエラー文も伏せてからモデルへ返す", async () => {
+		const requests: Array<Array<{ role: number; content: unknown }>> = []
+		let round = 0
+		const model = {
+			sendRequest: async (messages: Array<{ role: number; content: unknown }>) => {
+				requests.push(messages)
+				round++
+				return {
+					stream: (async function* () {
+						if (round === 1) {
+							yield { callId: "call-1", name: "pii_guard_read_file", input: { path: "customer.txt" } }
+						} else {
+							yield { value: "読めませんでした" }
+						}
+					})(),
+				}
+			},
+		}
+		const handler = createHandler({
+			masker: () => new TaskPiiMasker({ enabled: true } as never),
+			isEnabled: () => true,
+			selectModel: async () => model as never,
+			tools: [{ name: "pii_guard_read_file", description: "読む" }],
+			runTool: async () => {
+				throw new Error("hanako@corp.example のファイルを読めません")
+			},
+		})
+
+		await handler(
+			{ prompt: "customer.txtを読んで", references: [] } as never,
+			{ history: [] } as never,
+			fakeStream().stream as never,
+			{} as never,
+		)
+
+		const second = JSON.stringify(requests[1])
+		expect(second).toContain("{{email-001}}")
+		expect(second).not.toContain("hanako@corp.example")
+	})
+
+	it("Write Restore の現在値を回答の先頭へ常に表示する", async () => {
+		const safe = await ask({ enabled: true })
+		expect(safe.shown).toContain("Write Restore: 切")
+
+		const fake = fakeModel(["はい"])
+		const out = fakeStream()
+		const handler = createHandler({
+			masker: () => new TaskPiiMasker({ enabled: true } as never),
+			isEnabled: () => true,
+			restoreFileWrites: () => true,
+			selectModel: async () => fake.model as never,
+		})
+		await handler(
+			{ prompt: "書いて", references: [] } as never,
+			{ history: [] } as never,
+			out.stream as never,
+			{} as never,
+		)
+
+		expect(out.parts.join("")).toContain("Write Restore: 入")
 	})
 })

@@ -6,7 +6,7 @@
 import * as vscode from "vscode"
 
 import { TaskPiiMasker } from "./pii/TaskPiiMasker"
-import { maskSecretsInActiveEditor, restoreSecretsInActiveEditor } from "./pii/maskEditor"
+import { checkSecretsInActiveEditor, maskSecretsInActiveEditor, restoreSecretsInActiveEditor } from "./pii/maskEditor"
 import { addSelectionToDictionary, exportDictionary } from "./pii/dictionaryEditor"
 import { sessionVault } from "./pii/maskConversation"
 import { createHandler } from "./participant"
@@ -30,12 +30,19 @@ function piiMasker(): TaskPiiMasker {
 export function activate(context: vscode.ExtensionContext): void {
 	const participant = vscode.chat.createChatParticipant(
 		"pii-guard.mask",
-		createHandler({ masker: piiMasker, isEnabled: () => readSettings().enabled !== false }),
+		createHandler({
+			masker: piiMasker,
+			isEnabled: () => readSettings().enabled !== false,
+			restoreFileWrites: () => readSettings().fileWrites?.restore === true,
+		}),
 	)
 	participant.iconPath = new vscode.ThemeIcon("shield")
 
 	context.subscriptions.push(
 		participant,
+		vscode.commands.registerCommand("piiGuard.checkFile", () =>
+			checkSecretsInActiveEditor(readSettings(), (texts) => piiMasker().properNounsFor(texts)),
+		),
 		vscode.commands.registerCommand("piiGuard.maskFile", () =>
 			maskSecretsInActiveEditor(readSettings(), sessionVault(), (texts) =>
 				piiMasker().properNounsFor(texts),

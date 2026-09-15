@@ -41,6 +41,9 @@ export function readSettings(): PiiMasking {
 	return {
 		enabled: config.get<boolean>("enabled"),
 		restore: config.get<boolean>("restore"),
+		fileWrites: {
+			restore: config.get<boolean>("fileWrites.restore"),
+		},
 		kinds: checkedNames<NonNullable<PiiMasking["kinds"]>[number]>(
 			config.get<Record<string, boolean>>("kinds"),
 		),

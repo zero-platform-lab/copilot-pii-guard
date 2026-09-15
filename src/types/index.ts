@@ -20,6 +20,10 @@ export type PiiMasking = {
 	enabled?: boolean
 	/** 応答の伏せ字を元の値へ戻すか。既定は戻す。 */
 	restore?: boolean
+	/** ファイル道具が書くとき、伏せ字をローカルで元の値へ戻す。既定は戻さない。 */
+	fileWrites?: {
+		restore?: boolean
+	}
 	/** 伏せる種類。省略すると全部。 */
 	kinds?: PiiKind[]
 	/** 利用者が挙げた語。 */
