@@ -12,7 +12,7 @@ import { promises as fs } from "fs"
 import * as vscode from "vscode"
 
 import { readSettings } from "../settings"
-import { piiKinds, nerEntities } from "../types"
+import { fileToolModes, piiKinds, nerEntities } from "../types"
 
 /** `package.json` の設定の定義を読む。 */
 async function manifestProperties(): Promise<Record<string, { properties: Record<string, unknown> }>> {
@@ -68,6 +68,15 @@ describe("チェックの形を、名前の並びへ変える", () => {
 
 		expect(settings.fileWrites?.restore).toBe(true)
 	})
+
+	it("ファイル道具モードを読み、未設定は confirmEdit にする", () => {
+		expect(withConfig({ "fileTools.mode": "readOnly" }).fileTools?.mode).toBe("readOnly")
+		expect(withConfig({}).fileTools?.mode).toBe("confirmEdit")
+	})
+
+	it("未知のファイル道具モードは権限を広げず off にする", () => {
+		expect(withConfig({ "fileTools.mode": "alwaysWrite" }).fileTools?.mode).toBe("off")
+	})
 })
 
 describe("package.json と食い違わない", () => {
@@ -83,5 +92,15 @@ describe("package.json と食い違わない", () => {
 		const declared = Object.keys((await manifestProperties())["piiGuard.properNouns.entities"].properties)
 
 		expect(declared.sort()).toEqual([...nerEntities].sort())
+	})
+
+	it("ファイル道具モードの選択肢と既定値が実装と一致する", async () => {
+		const declared = (await manifestProperties())["piiGuard.fileTools.mode"] as unknown as {
+			enum: string[]
+			default: string
+		}
+
+		expect(declared.enum).toEqual(fileToolModes)
+		expect(declared.default).toBe("confirmEdit")
 	})
 })

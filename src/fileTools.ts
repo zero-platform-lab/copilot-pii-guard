@@ -16,6 +16,18 @@ const DEFAULT_RESULTS = 50
 const MAX_RESULTS = 200
 const MAX_READ_BYTES = 2 * 1024 * 1024
 
+/** 提示と実行の両方で使う正準の権限グループ。未登録の名前は許可しない。 */
+export const FILE_TOOL_ACCESS = {
+	pii_guard_list_files: "read",
+	pii_guard_search_files: "read",
+	pii_guard_read_file: "read",
+	pii_guard_write_file: "write",
+} as const
+
+export function fileToolAccess(name: string): "read" | "write" | undefined {
+	return FILE_TOOL_ACCESS[name as keyof typeof FILE_TOOL_ACCESS]
+}
+
 export const FILE_TOOLS: readonly vscode.LanguageModelChatTool[] = [
 	{
 		name: "pii_guard_list_files",
@@ -69,6 +81,7 @@ export const FILE_TOOLS: readonly vscode.LanguageModelChatTool[] = [
 ]
 
 export type FileSearchMatch = { path: string; line: number; text: string }
+export type FileWriteResult = { saved: boolean }
 
 /** VS Codeへの入出力を試験で差し替えるための細い境界。 */
 export type FileToolHost = {
@@ -80,7 +93,7 @@ export type FileToolHost = {
 		token: vscode.CancellationToken,
 	) => Promise<FileSearchMatch[]>
 	readFile: (path: string) => Promise<string>
-	writeFile: (path: string, content: string) => Promise<void>
+	writeFile: (path: string, content: string) => Promise<FileWriteResult | void>
 	confirmWrite: (path: string, restored: boolean) => Promise<boolean>
 }
 
@@ -109,6 +122,9 @@ export async function runFileTool(
 		host?: FileToolHost
 	},
 ): Promise<string> {
+	// 呼び出し側の提示制御だけに頼らない。モデルが名前を直接返しても、生の結果を扱わない。
+	if (!masker.enabled) throw new Error("伏せ字化が切のため、ファイル道具は使えません。")
+
 	const host = options.host ?? defaultFileToolHost
 	let result: string
 
@@ -134,10 +150,11 @@ export async function runFileTool(
 		const written = options.restoreWrites ? masker.restoreExplicitly(safeContent) : safeContent
 
 		if (!(await host.confirmWrite(path, options.restoreWrites))) return "利用者がファイルの書き込みを取り消しました。"
-		await host.writeFile(path, written)
-		result = options.restoreWrites
-			? `${path} へ元の値を復元して書き込みました。`
-			: `${path} へ伏せ字のまま書き込みました。`
+		const writeResult = await host.writeFile(path, written)
+		const contentMode = options.restoreWrites ? "元の値を復元して" : "伏せ字のまま"
+		result = writeResult?.saved
+			? `${path} を${contentMode}ディスクへ保存しました。`
+			: `${path} へ${contentMode}変更を適用しました。未保存の場合はVS Codeで保存してください。`
 	} else {
 		throw new Error(`利用できない道具です: ${name}`)
 	}
@@ -152,7 +169,7 @@ async function workspaceFile(path: string, allowMissingFile = false): Promise<vs
 	if (folders.length === 0) throw new Error("作業場所が開かれていません。")
 
 	const normalized = path.trim().replace(/\\/g, "/")
-	if (!normalized || normalized.startsWith("/") || /^[A-Za-z]:/.test(normalized)) {
+	if (!normalized || normalized.includes("\0") || normalized.startsWith("/") || /^[A-Za-z]:/.test(normalized)) {
 		throw new Error("作業場所からの相対パスを指定してください。")
 	}
 	const parts = normalized.split("/")
@@ -232,8 +249,9 @@ const defaultFileToolHost: FileToolHost = {
 	async writeFile(path, content) {
 		const uri = await workspaceFile(path, true)
 		const edit = new vscode.WorkspaceEdit()
+		let document: vscode.TextDocument | undefined
 		try {
-			const document = await vscode.workspace.openTextDocument(uri)
+			document = await vscode.workspace.openTextDocument(uri)
 			const end = document.positionAt(document.getText().length)
 			edit.replace(uri, new vscode.Range(new vscode.Position(0, 0), end), content)
 		} catch {
@@ -241,12 +259,14 @@ const defaultFileToolHost: FileToolHost = {
 			edit.insert(uri, new vscode.Position(0, 0), content)
 		}
 		if (!(await vscode.workspace.applyEdit(edit))) throw new Error(`書き込めませんでした: ${path}`)
+		document ??= await vscode.workspace.openTextDocument(uri)
+		return { saved: !document.isDirty }
 	},
 
 	async confirmWrite(path, restored) {
 		const mode = restored ? "元の値へ復元して" : "伏せ字のまま"
 		const choice = await vscode.window.showWarningMessage(
-			`${path} へ${mode}書き込みます。既存の内容は置き換えられます。`,
+			`権限: confirmEdit。${path} へ${mode}書き込みます。既存の内容は置き換えられます。`,
 			{ modal: true },
 			"書き込む",
 		)

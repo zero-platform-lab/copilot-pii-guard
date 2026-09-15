@@ -34,6 +34,7 @@ export function activate(context: vscode.ExtensionContext): void {
 			masker: piiMasker,
 			isEnabled: () => readSettings().enabled !== false,
 			restoreFileWrites: () => readSettings().fileWrites?.restore === true,
+			fileToolMode: () => readSettings().fileTools?.mode ?? "confirmEdit",
 		}),
 	)
 	participant.iconPath = new vscode.ThemeIcon("shield")
