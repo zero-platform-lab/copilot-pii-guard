@@ -76,6 +76,63 @@ export type ParticipantDeps = {
 	isEnabled: () => boolean
 	/** 使うモデルを選ぶ。既定は Copilot のもの。 */
 	selectModel?: () => Promise<vscode.LanguageModelChat | undefined>
+	/** 参照した文書を読む。試験では、実ファイルを開かずに差し替える。 */
+	openTextDocument?: (uri: vscode.Uri) => Thenable<vscode.TextDocument>
+}
+
+type ReferenceText = { label: string; text: string }
+
+/** `Uri` は実装が増えても、この 2 つの値を持つ。`Location` はここに当てはまらない。 */
+function isUri(value: unknown): value is vscode.Uri {
+	return (
+		typeof value === "object" &&
+		value !== null &&
+		"scheme" in value &&
+		typeof value.scheme === "string" &&
+		"path" in value &&
+		typeof value.path === "string"
+	)
+}
+
+/** ファイル全体、または選択範囲（Location）を、モデルへ送る前の本文として取り出す。 */
+export async function readReferences(
+	references: readonly vscode.ChatPromptReference[],
+	openTextDocument: (uri: vscode.Uri) => Thenable<vscode.TextDocument> = vscode.workspace.openTextDocument,
+): Promise<{ texts: ReferenceText[]; failures: string[] }> {
+	const texts: ReferenceText[] = []
+	const failures: string[] = []
+
+	for (const reference of references) {
+		const { value } = reference
+		if (typeof value === "string") {
+			texts.push({ label: reference.modelDescription ?? "参照", text: value })
+			continue
+		}
+
+		const location =
+			typeof value === "object" && value !== null && "uri" in value && "range" in value && isUri(value.uri)
+				? (value as vscode.Location)
+				: undefined
+		const uri = isUri(value) ? value : location?.uri
+		if (!uri) continue
+
+		try {
+			const document = await openTextDocument(uri)
+			texts.push({ label: uri.path, text: document.getText(location?.range) })
+		} catch {
+			failures.push(uri.path)
+		}
+	}
+
+	return { texts, failures }
+}
+
+/** 参照した本文を、出どころが分かる形で依頼文へ加える。ここで加えた全体を伏せる。 */
+export function promptWithReferences(prompt: string, references: readonly ReferenceText[]): string {
+	return [
+		prompt,
+		...references.map((reference) => `\n\n--- 参照: ${reference.label} ---\n${reference.text}`),
+	].join("")
 }
 
 async function defaultModel(): Promise<vscode.LanguageModelChat | undefined> {
@@ -91,14 +148,22 @@ async function defaultModel(): Promise<vscode.LanguageModelChat | undefined> {
  */
 export function createHandler(deps: ParticipantDeps): vscode.ChatRequestHandler {
 	const selectModel = deps.selectModel ?? defaultModel
+	const openTextDocument = deps.openTextDocument ?? vscode.workspace.openTextDocument
 
 	return async (request, _context, stream, token) => {
 		const masker = deps.masker()
-		const masked = await masker.maskPrompt(request.prompt)
+		const references = await readReferences(request.references ?? [], openTextDocument)
+		const masked = await masker.maskPrompt(promptWithReferences(request.prompt, references.texts))
 
 		// **状態を必ず出す。** 切れているのか、伏せるものが無かったのかを、利用者が
 		// 見分けられるようにする。
 		stream.markdown(describeState(deps.isEnabled(), masked.text))
+		if (references.texts.length > 0) {
+			stream.markdown(`> 🛡 参照した本文 ${references.texts.length} 件も伏せて送ります。\n\n`)
+		}
+		if (references.failures.length > 0) {
+			stream.markdown(`> ⚠️ 読み込めなかった参照は送信しませんでした: ${references.failures.join("、")}\n\n`)
+		}
 
 		// **何を伏せたかを出す。** 出さないと、伏せたのか素通りしたのかが分からない。
 		// 伏せているつもりで送るのが、いちばん気づけない失敗である。

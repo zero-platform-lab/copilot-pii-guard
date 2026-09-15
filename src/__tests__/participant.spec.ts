@@ -53,7 +53,7 @@ function fakeStream() {
 	return { parts, stream: { markdown: (text: string) => parts.push(text) } }
 }
 
-async function ask(settings: object, reply: string[] = ["わかりました"]) {
+async function ask(settings: object, reply: string[] = ["わかりました"], references: unknown[] = []) {
 	const fake = fakeModel(reply)
 	const out = fakeStream()
 
@@ -64,7 +64,7 @@ async function ask(settings: object, reply: string[] = ["わかりました"]) {
 		selectModel: async () => fake.model as never,
 	})
 
-	await handler({ prompt: PROMPT } as never, {} as never, out.stream as never, {} as never)
+	await handler({ prompt: PROMPT, references } as never, {} as never, out.stream as never, {} as never)
 
 	return { sent: fake.seen.join(""), shown: out.parts.join("") }
 }
@@ -92,6 +92,57 @@ describe("伏せてから Copilot へ送る", () => {
 
 		expect(sent).toContain(SECRETS.email)
 		expect(sent).toContain(SECRETS.address)
+	})
+
+	it("添付したファイル、選択範囲、文字列参照も伏せてから送る", async () => {
+		const fileSecret = "hanako@corp.example"
+		const selectionSecret = "東京都千代田区丸の内1-1-1"
+		const referenceSecret = "4111 1111 1111 1111"
+		const fake = fakeModel(["はい"])
+		const out = fakeStream()
+		const document = { getText: (range?: unknown) => (range ? selectionSecret : `連絡先は ${fileSecret}`) }
+		const handler = createHandler({
+			masker: () => new TaskPiiMasker({ enabled: true } as never),
+			isEnabled: () => true,
+			selectModel: async () => fake.model as never,
+			openTextDocument: async () => document as never,
+		})
+		const uri = { scheme: "file", path: "/work/customer.txt" }
+
+		await handler(
+			{
+				prompt: "参照を要約して",
+				references: [{ value: uri }, { value: { uri, range: {} } }, { value: referenceSecret }],
+			} as never,
+			{} as never,
+			out.stream as never,
+			{} as never,
+		)
+
+		const sent = fake.seen.join("")
+		for (const value of [fileSecret, selectionSecret, referenceSecret]) expect(sent).not.toContain(value)
+		expect(out.parts.join("")).toContain("参照した本文 3 件")
+	})
+
+	it("読めない参照は送らず、理由を表示する", async () => {
+		const fake = fakeModel(["はい"])
+		const out = fakeStream()
+		const handler = createHandler({
+			masker: () => new TaskPiiMasker({ enabled: true } as never),
+			isEnabled: () => true,
+			selectModel: async () => fake.model as never,
+			openTextDocument: async () => Promise.reject(new Error("read failed")),
+		})
+
+		await handler(
+			{ prompt: "確認して", references: [{ value: { scheme: "file", path: "/work/private.txt" } }] } as never,
+			{} as never,
+			out.stream as never,
+			{} as never,
+		)
+
+		expect(fake.seen.join("")).not.toContain("private.txt")
+		expect(out.parts.join("")).toContain("読み込めなかった参照は送信しませんでした")
 	})
 
 	it("応答の伏せ字は、元の値へ戻して画面へ出す", async () => {

@@ -1,6 +1,6 @@
 # PII Guard for Copilot
 
-Copilot へ送る前に、氏名・社名・連絡先などを伏せ字へ置き換える VS Code の拡張。
+Copilot に送る前に、氏名・社名・連絡先などを伏せ字へ置き換える VS Code 拡張です。
 
 ```
 あなた:   @mask 株式会社サンプルの田中さんへ送る案内を書いて
@@ -8,16 +8,17 @@ Copilot へ: {{org-001}} の {{person-001}} へ送る案内を書いて
 画面:      株式会社サンプルの田中さんへ、以下のとおりご案内します…
 ```
 
-送るのはこの拡張が組み立てた文だけなので、**伏せ忘れたものが混ざる経路が無い。** 返って
-きた文は元の値へ戻してから画面へ出すので、読むときは普通の日本語である。
+この拡張が受け取った入力欄の文章、添付ファイル、選択範囲などの参照本文を伏せてから
+Copilot に送ります。応答は元の値へ戻して表示します。
 
 ## できないこと
 
-**普通の Copilot Chat と補完は素通りする。** Copilot 自身の要求へ割り込む口は VS Code の
-API に無い。伏せたいときは `@mask` と書く必要がある。
+**通常の Copilot Chat と補完は対象外です。** VS Code API では Copilot 自身の送信処理へ
+介入できません。伏せたい内容は `@mask` に送ってください。
 
-**取りこぼす。** 伏せるものがある文の約 1 割で何かしら残る。短い姓（`森` `林`）はとくに
-弱い。**実際に扱う氏名や社名は辞書に書く**こと。完全一致なので取りこぼさない。
+**すべてを検出できるわけではありません。** 固有名詞の推定では、短い姓（`森`、`林`）などを
+見落とすことがあります。実際に扱う氏名や社名は辞書へ登録してください。辞書に登録した語は
+完全一致で検出します。
 
 ## 2 つの層
 
@@ -29,37 +30,36 @@ API に無い。伏せたいときは `@mask` と書く必要がある。
 **第 1 層に人名の規則は無い。** 敬称から当てる規則は誤検出が多く、外してある。辞書に無い
 氏名を伏せるには第 2 層が要る。
 
-## 作り方
+## 開発
 
 必要なもの: Node 20 以上、VS Code 1.95 以上。
 
 ```sh
 cd ~/copilot-pii-guard
 npm install
-npm run check-types   # 型
-npm test              # 試験（372 件）
-npm run vsix          # 配布物を作る（bin/ の下）
+npm run check-types   # 型チェック
+npm test              # テスト
+npm run vsix          # VSIX を bin/ に生成
 ```
 
-`npm run vsix` は 3 つ作る。**第 2 層の native は platform ごとに違う**ので、分けて
-作らないと動かない。
+`npm run vsix` は3種類の VSIX を生成します。第2層で使う native モジュールはOSごとに異なるためです。
 
 | 出来るもの | 対象 | 第 2 層 |
 | --- | --- | --- |
-| `copilot-pii-guard-linux-x64-0.1.0.vsix` | Linux (x64) | 動く |
-| `copilot-pii-guard-win32-x64-0.1.0.vsix` | Windows (x64) | 動く |
-| `copilot-pii-guard-0.1.0.vsix` | それ以外 | 動かない（第 1 層は動く） |
+| `copilot-pii-guard-linux-x64-0.2.2.vsix` | Linux (x64) | 動く |
+| `copilot-pii-guard-win32-x64-0.2.2.vsix` | Windows (x64) | 動く |
+| `copilot-pii-guard-0.2.2.vsix` | それ以外 | 動かない（第 1 層は動く） |
 
 ## 入れ方
 
 ```sh
-code --install-extension bin/copilot-pii-guard-linux-x64-0.1.0.vsix
+code --install-extension bin/copilot-pii-guard-linux-x64-0.2.2.vsix
 ```
 
-画面からも入れられる。拡張の一覧 → 右上の `…` → **VSIX からのインストール**。
+VS Code の画面からは、拡張機能ビューの右上にある `…` から **VSIX からのインストール** を選びます。
 
-入れたら VS Code を開き直し、Copilot Chat で `@mask` と打つ。一覧に **PII Guard** が
-出れば入っている。
+インストール後に VS Code を再起動し、Copilot Chat で `@mask` と入力してください。候補に
+**PII Guard** が表示されれば利用できます。
 
 ## 使い方
 
@@ -71,8 +71,10 @@ code --install-extension bin/copilot-pii-guard-linux-x64-0.1.0.vsix
 @mask この議事録を要約して
 ```
 
-**返事の 1 行目に、いまの状態が必ず出る。** 出さないと、伏せたのか素通りしたのかが
-分からない。
+添付したファイルや選択範囲も、`@mask` が受け取れた本文は同じように伏せます。読み込めない
+参照は Copilot へ送らず、チャットに警告を表示します。
+
+応答の先頭には、伏せ字化の状態と件数を表示します。
 
 ```
 🛡 伏せました。 氏名 2 / 社名 1 / メールアドレス 1
@@ -84,7 +86,7 @@ code --install-extension bin/copilot-pii-guard-linux-x64-0.1.0.vsix
 
 ### エディタ
 
-右クリックに 3 つ増える。
+右クリックの **PII Guard** メニューに 3 つの操作を追加します。
 
 | 項目 | 何をするか |
 | --- | --- |
@@ -106,15 +108,15 @@ VS Code の設定で `piiGuard` を検索する。
 
 | 設定 | 既定 | 何を決めるか |
 | --- | --- | --- |
-| `piiGuard.enabled` | 入 | 伏せるかどうか |
-| `piiGuard.terms` | 空 | 必ず伏せる語。**ここに書いたものは取りこぼさない** |
-| `piiGuard.dictionaryPaths` | 空 | 辞書のファイル。空なら `~/.agent/pii-dictionary.txt` |
-| `piiGuard.properNouns.enabled` | 切 | 第 2 層を使うか |
-| `piiGuard.properNouns.timeBudgetMs` | 10000 | 判定の上限（ミリ秒）。**0 なら待ち続ける** |
-| `piiGuard.properNouns.modelPath` | 空 | モデルの置き場所。空なら `~/.agent/pii-ner` |
-| `piiGuard.properNouns.modelUrl` | 空 | モデルの取得先。**既定の取得先は持たない** |
-| `piiGuard.kinds` | 全部入 | 伏せる種類。**チェックで選ぶ**（12 種類） |
-| `piiGuard.properNouns.entities` | 6 つ入 | 第 2 層で伏せる区分。製品名とイベント名は既定で外してある |
+| `piiGuard.enabled` | オン | 伏せ字化の有効・無効 |
+| `piiGuard.terms` | 空 | 必ず伏せたい語。登録した語は完全一致で検出します |
+| `piiGuard.dictionaryPaths` | 空 | 辞書ファイルの場所。空なら `~/.agent/pii-dictionary.txt` |
+| `piiGuard.properNouns.enabled` | オフ | 第2層の固有名詞検出を使うか |
+| `piiGuard.properNouns.timeBudgetMs` | 10000 | 検出に使う上限時間（ミリ秒）。`0` は時間制限なし |
+| `piiGuard.properNouns.modelPath` | 空 | モデルの場所。空なら `~/.agent/pii-ner` |
+| `piiGuard.properNouns.modelUrl` | 空 | モデルの取得先URL。既定の取得先はありません |
+| `piiGuard.kinds` | すべてオン | 伏せ字化する種類（12種類） |
+| `piiGuard.properNouns.entities` | 6種類オン | 第2層で検出する区分。製品名とイベント名は既定で除外 |
 
 ### 辞書の書き方
 
@@ -128,9 +130,9 @@ VS Code の設定で `piiGuard` を検索する。
 
 ## 第 2 層を使うには
 
-1. 設定で `piiGuard.properNouns.enabled` を入にする
-2. `~/.agent/pii-ner` へモデルの 6 ファイルを置く（[model-ner-ja-v1](https://github.com/zero-platform-lab/copilot-pii-guard/releases/tag/model-ner-ja-v1)）
-3. VS Code を開き直す
+1. 設定で `piiGuard.properNouns.enabled` をオンにする
+2. [model-ner-ja-v1](https://github.com/zero-platform-lab/copilot-pii-guard/releases/tag/model-ner-ja-v1) の6ファイルを `~/.agent/pii-ner` に配置する
+3. VS Code を再起動する
 
 置き方は次のとおり。**`model_quantized.onnx` だけ `onnx/` の下**へ置く。
 
@@ -145,18 +147,16 @@ VS Code の設定で `piiGuard` を検索する。
   └ SHA256SUMS
 ```
 
-**閉鎖環境でも使える。** 別の機械で保存したファイルを媒体で運び、置き場所へ置けばよい。
-拡張から見れば、取得した場合と区別が付かない。
+閉鎖環境でも使えます。別の端末でダウンロードしたファイルを媒体で運び、上記の場所へ配置してください。
 
-網がある環境なら、`piiGuard.properNouns.modelUrl` にこれを書いてから
-`PII Guard: モデルを取得する` を実行する。
+インターネットに接続できる環境では、`piiGuard.properNouns.modelUrl` に次のURLを設定してから
+`PII Guard: モデルを取得する` を実行します。
 
 ```
 https://github.com/zero-platform-lab/copilot-pii-guard/releases/download/model-ner-ja-v1
 ```
 
-**既定の取得先は持たない。** 持つと、誰の指示も無く 282 MB を取りに行く経路を抱える
-ことになる。
+既定の取得先はありません。明示的な設定なしに約282 MBのモデルをダウンロードしないためです。
 
 ## 中身
 
@@ -169,5 +169,5 @@ src/
   pii/            伏せる処理そのもの（第 1 層・第 2 層）
 ```
 
-`src/pii` は [local-code-agent](https://github.com/zero-platform-lab/local-code-agent) から
-写したものである。向こうで直したら、こちらへも写す。
+`src/pii` は [local-code-agent](https://github.com/zero-platform-lab/local-code-agent) を基にしています。
+共通部分を更新した場合は、この拡張にも反映してください。
