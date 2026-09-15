@@ -37,5 +37,7 @@ export type PiiMasking = {
 		entities?: NerEntity[]
 		/** 判定にかけてよい時間（ミリ秒）。0 なら切らずに待つ。 */
 		timeBudgetMs?: number
+		/** 時間切れまたは一時的な失敗のあとに再試行する回数。 */
+		retryCount?: number
 	}
 }

@@ -2,7 +2,7 @@
 	"name": "copilot-pii-guard",
 	"displayName": "PII Guard for Copilot",
 	"description": "Copilot へ送る前に、氏名・社名・連絡先などを伏せ字へ置き換えます。",
-	"version": "0.2.2",
+	"version": "0.2.3",
 	"publisher": "internal",
 	"private": true,
 	"license": "Apache-2.0",
@@ -63,12 +63,12 @@
 						"person": {
 							"type": "boolean",
 							"default": true,
-							"markdownDescription": "辞書に書いた氏名。前後の文から当てるのは第 2 層"
+							"markdownDescription": "辞書に書いた氏名。前後の文から推測するのは固有名詞検出"
 						},
 						"org": {
 							"type": "boolean",
 							"default": true,
-							"markdownDescription": "辞書に書いた社名・団体名。前後の文から当てるのは第 2 層"
+							"markdownDescription": "辞書に書いた社名・団体名。前後の文から推測するのは固有名詞検出"
 						},
 						"term": {
 							"type": "boolean",
@@ -169,11 +169,11 @@
 				"piiGuard.properNouns.enabled": {
 					"type": "boolean",
 					"default": false,
-					"description": "固有名詞の検出（第 2 層）を使います。モデルのファイルを別に置く必要があります（約 282 MB）。"
+					"description": "固有名詞検出を使います。モデルのファイルを別に置く必要があります。"
 				},
 				"piiGuard.properNouns.entities": {
 					"type": "object",
-					"markdownDescription": "第 2 層で伏せる区分。モデルが判定した区分のうち、入にしたものだけを伏せます。",
+					"markdownDescription": "固有名詞検出で伏せる区分。モデルが判定した区分のうち、入にしたものだけを伏せます。",
 					"additionalProperties": false,
 					"default": {
 						"PER": true,
@@ -240,6 +240,13 @@
 					"default": 10000,
 					"minimum": 0,
 					"description": "判定にかけてよい時間（ミリ秒）。0 と書くと、終わるまで待ちます。"
+				},
+				"piiGuard.properNouns.retryCount": {
+					"type": "integer",
+					"default": 3,
+					"minimum": 0,
+					"maximum": 10,
+					"description": "時間切れまたは一時的な失敗のあとに再試行する回数。0 なら再試行しません。"
 				},
 				"piiGuard.properNouns.modelPath": {
 					"type": "string",

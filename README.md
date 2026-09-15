@@ -20,15 +20,15 @@ Copilot に送ります。応答は元の値へ戻して表示します。
 見落とすことがあります。実際に扱う氏名や社名は辞書へ登録してください。辞書に登録した語は
 完全一致で検出します。
 
-## 2 つの層
+## 検出のしくみ
 
-| | 何を見るか | モデル |
+| 方式 | 何を見るか | モデル |
 | --- | --- | --- |
-| 第 1 層 | 形と検査数字と辞書（メールアドレス、電話、住所、番号、鍵、辞書の語） | 要らない |
-| 第 2 層 | 前後の文からの固有名詞の判定（氏名、社名、地名、施設名） | 要る（約 282 MB） |
+| 基本検出 | 形と検査数字と辞書（メールアドレス、電話、住所、番号、鍵、辞書の語） | 要らない |
+| 固有名詞検出 | 前後の文から氏名、社名、地名、施設名を判定する | 要る |
 
-**第 1 層に人名の規則は無い。** 敬称から当てる規則は誤検出が多く、外してある。辞書に無い
-氏名を伏せるには第 2 層が要る。
+**基本検出に人名の推測規則はありません。** 敬称から当てる規則は誤検出が多いためです。
+辞書にない氏名を伏せるには、固有名詞検出を有効にします。
 
 ## 開発
 
@@ -42,18 +42,18 @@ npm test              # テスト
 npm run vsix          # VSIX を bin/ に生成
 ```
 
-`npm run vsix` は3種類の VSIX を生成します。第2層で使う native モジュールはOSごとに異なるためです。
+`npm run vsix` は3種類の VSIX を生成します。固有名詞検出で使う native モジュールはOSごとに異なるためです。
 
-| 出来るもの | 対象 | 第 2 層 |
+| 出来るもの | 対象 | 固有名詞検出 |
 | --- | --- | --- |
-| `copilot-pii-guard-linux-x64-0.2.2.vsix` | Linux (x64) | 動く |
-| `copilot-pii-guard-win32-x64-0.2.2.vsix` | Windows (x64) | 動く |
-| `copilot-pii-guard-0.2.2.vsix` | それ以外 | 動かない（第 1 層は動く） |
+| `copilot-pii-guard-linux-x64-0.2.3.vsix` | Linux (x64) | 動く |
+| `copilot-pii-guard-win32-x64-0.2.3.vsix` | Windows (x64) | 動く |
+| `copilot-pii-guard-0.2.3.vsix` | それ以外 | 動かない（基本検出は動く） |
 
 ## 入れ方
 
 ```sh
-code --install-extension bin/copilot-pii-guard-linux-x64-0.2.2.vsix
+code --install-extension bin/copilot-pii-guard-linux-x64-0.2.3.vsix
 ```
 
 VS Code の画面からは、拡張機能ビューの右上にある `…` から **VSIX からのインストール** を選びます。
@@ -111,12 +111,13 @@ VS Code の設定で `piiGuard` を検索する。
 | `piiGuard.enabled` | オン | 伏せ字化の有効・無効 |
 | `piiGuard.terms` | 空 | 必ず伏せたい語。登録した語は完全一致で検出します |
 | `piiGuard.dictionaryPaths` | 空 | 辞書ファイルの場所。空なら `~/.agent/pii-dictionary.txt` |
-| `piiGuard.properNouns.enabled` | オフ | 第2層の固有名詞検出を使うか |
+| `piiGuard.properNouns.enabled` | オフ | 固有名詞検出を使うか |
 | `piiGuard.properNouns.timeBudgetMs` | 10000 | 検出に使う上限時間（ミリ秒）。`0` は時間制限なし |
+| `piiGuard.properNouns.retryCount` | 3 | 時間切れまたは一時的な失敗後の再試行回数。`0` は再試行なし |
 | `piiGuard.properNouns.modelPath` | 空 | モデルの場所。空なら `~/.agent/pii-ner` |
 | `piiGuard.properNouns.modelUrl` | 空 | モデルの取得先URL。既定の取得先はありません |
 | `piiGuard.kinds` | すべてオン | 伏せ字化する種類（12種類） |
-| `piiGuard.properNouns.entities` | 6種類オン | 第2層で検出する区分。製品名とイベント名は既定で除外 |
+| `piiGuard.properNouns.entities` | 6種類オン | 固有名詞検出の区分。製品名とイベント名は既定で除外 |
 
 ### 辞書の書き方
 
@@ -128,10 +129,10 @@ VS Code の設定で `piiGuard` を検索する。
 /案件[0-9]{4}/	term
 ```
 
-## 第 2 層を使うには
+## 固有名詞検出を使うには
 
 1. 設定で `piiGuard.properNouns.enabled` をオンにする
-2. [model-ner-ja-v1](https://github.com/zero-platform-lab/copilot-pii-guard/releases/tag/model-ner-ja-v1) の6ファイルを `~/.agent/pii-ner` に配置する
+2. 配布された `model-ner-ja-v1` の6ファイルを `~/.agent/pii-ner` に配置する
 3. VS Code を再起動する
 
 置き方は次のとおり。**`model_quantized.onnx` だけ `onnx/` の下**へ置く。
@@ -153,10 +154,21 @@ VS Code の設定で `piiGuard` を検索する。
 `PII Guard: モデルを取得する` を実行します。
 
 ```
-https://github.com/zero-platform-lab/copilot-pii-guard/releases/download/model-ner-ja-v1
+https://example.invalid/model-ner-ja-v1
 ```
 
-既定の取得先はありません。明示的な設定なしに約282 MBのモデルをダウンロードしないためです。
+既定の取得先はありません。明示的な設定なしに大容量のモデルをダウンロードしないためです。
+
+### モデルの由来
+
+`model-ner-ja-v1` は、MITライセンスの
+[tsmatz/xlm-roberta-ner-japanese](https://huggingface.co/tsmatz/xlm-roberta-ner-japanese) を
+ONNXへ変換し、int8へ量子化したものです。元モデルは、日本語Wikipediaから作られた
+[stockmark/ner-wikipedia-dataset](https://huggingface.co/datasets/stockmark/ner-wikipedia-dataset)
+（CC BY-SA 3.0）で固有表現抽出向けに学習されています。元のモデルとデータセットは、それぞれの
+配布ページから確認できます。
+
+モデルを作り直す手順は `docs/build-ner-model.md` に記載しています。
 
 ## 中身
 
@@ -166,8 +178,5 @@ src/
   participant.ts  @mask の受け口。伏せて送り、戻して出す
   stream.ts       区切りをまたいだ伏せ字を戻す
   settings.ts     VS Code の設定を読む
-  pii/            伏せる処理そのもの（第 1 層・第 2 層）
+  pii/            伏せる処理そのもの
 ```
-
-`src/pii` は [local-code-agent](https://github.com/zero-platform-lab/local-code-agent) を基にしています。
-共通部分を更新した場合は、この拡張にも反映してください。

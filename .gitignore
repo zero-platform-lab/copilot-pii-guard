@@ -2,3 +2,7 @@ node_modules/
 dist/
 out/
 bin/
+build/
+.venv-model/
+__pycache__/
+*.pyc

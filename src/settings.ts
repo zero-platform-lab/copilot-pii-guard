@@ -56,6 +56,7 @@ export function readSettings(): PiiMasking {
 				config.get<Record<string, boolean>>("properNouns.entities"),
 			),
 			timeBudgetMs: config.get<number>("properNouns.timeBudgetMs"),
+			retryCount: config.get<number>("properNouns.retryCount"),
 		},
 	}
 }

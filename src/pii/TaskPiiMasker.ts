@@ -68,15 +68,25 @@ export const NER_AT_ONCE = 8
  */
 export const NER_TIME_BUDGET = 10_000
 
+/** モデルを読み込んだ直後だけ、初期化後の最初の判定にも余裕を持たせる。 */
+export const NER_FIRST_TIME_BUDGET_MULTIPLIER = 3
+
+/** 時間切れまたは一時的な失敗のあとに再試行する回数の既定。 */
+export const NER_RETRY_COUNT = 3
+
+function retryCount(value: number | undefined): number {
+	return value === undefined ? NER_RETRY_COUNT : Math.max(0, Math.floor(value))
+}
+
 /**
  * この要求で判定にかけてよい終わりの時刻。**0 なら切らない。**
  *
  * 10 秒でも足りない使い方がある。長い履歴を一度に判定させたい、機械が遅い、といった場合、
  * 切られたことを警告で出しても利用者にできることが無かった。
  */
-function deadline(budget: number | undefined): number | undefined {
+function deadline(budget: number | undefined, firstRun = false): number | undefined {
 	const ms = budget ?? NER_TIME_BUDGET
-	return ms === 0 ? undefined : Date.now() + ms
+	return ms === 0 ? undefined : Date.now() + ms * (firstRun ? NER_FIRST_TIME_BUDGET_MULTIPLIER : 1)
 }
 
 export class TaskPiiMasker {
@@ -241,59 +251,85 @@ export class TaskPiiMasker {
 			return undefined
 		}
 
-		if (!this.backendTried) {
-			this.backendTried = true
-
-			// **例外で要求全体を殺さない（`FR-PII-23b`）。** モデルの読み込みは native を
-			// 伴うので、環境によっては投げる。投げたまま通すと、第 1 層も動かないまま
-			// 会話が失敗する。第 2 層が動かないだけにして、その旨を出す。
-			try {
-				const loaded = await loadBackend(directory)
-				this.backend = loaded.backend
-				if (!loaded.backend) this.trouble(directory, describeCheck(loaded.check))
-			} catch (error) {
-				this.trouble(directory, error instanceof Error ? error.message : String(error))
-			}
-		}
-
-		const backend = this.backend
-		if (!backend) {
-			this.noteLayerTwo(false)
-			return undefined
-		}
-
 		const options = { minScore: settings.minScore, entities: settings.entities }
-		const pending = texts.filter((text) => !this.nerMemo.has(text))
-		const until = deadline(settings.timeBudgetMs)
+		let retriesLeft = retryCount(settings.retryCount)
+		let useFirstBudget = !this.backendTried
+		let lastFailure: string | undefined
+		let learned = false
 
-		// **まとめて走らせる。** 1 つずつ待つと、初回の長い履歴で本文の数だけ待ち時間が
-		// 積み上がる。数を抑えるのは、全部同時に投げると記憶が膨らむためである。
-		for (let at = 0; at < pending.length; at += NER_AT_ONCE) {
-			// **時間で打ち切る（`FR-PII-23f`）。** 第 2 層は取りこぼしてよい層である。
-			// 全部を拾おうとして送信を待たせるほうが害が大きい。**ただし黙らない。**
-			if (until !== undefined && Date.now() > until) {
-				this.trouble(directory, `時間内に終わらなかった（残り ${pending.length - at} 件は第 1 層だけ）`)
-				break
+		while (true) {
+			if (!this.backendTried) {
+				this.backendTried = true
+				try {
+					const loaded = await loadBackend(directory)
+					this.backend = loaded.backend
+					if (!loaded.backend) {
+						// ファイル不足や照合不一致は、同じ要求内で繰り返しても直らない。
+						this.trouble(directory, describeCheck(loaded.check))
+						this.noteLayerTwo(false)
+						return undefined
+					}
+				} catch (error) {
+					this.backendTried = false
+					lastFailure = error instanceof Error ? error.message : String(error)
+					if (retriesLeft-- > 0) continue
+					this.trouble(directory, lastFailure)
+					this.noteLayerTwo(false)
+					return undefined
+				}
 			}
 
-			const batch = pending.slice(at, at + NER_AT_ONCE)
-			// **`allSettled` にする。** `all` だと 1 件の失敗で、同じまとまりの中で
-			// 済んでいたぶんまで捨てる。
-			const found = await Promise.allSettled(batch.map((text) => detectWith(backend, text, options)))
-			found.forEach((one, index) => {
-				if (one.status === "fulfilled") this.nerMemo.set(batch[index], one.value)
-			})
-
-			const failed = found.find((one) => one.status === "rejected")
-			if (failed) {
-				// **次の要求で読み直す。** 一度の不調で、この会話の間ずっと第 2 層を
-				// 止めない。済んだぶんは上で記憶へ入れてある。
-				const error = (failed as PromiseRejectedResult).reason
-				this.backend = undefined
-				this.backendTried = false
-				this.trouble(directory, error instanceof Error ? error.message : String(error))
-				break
+			const backend = this.backend
+			if (!backend) {
+				this.noteLayerTwo(false)
+				return undefined
 			}
+
+			const pending = texts.filter((text) => !this.nerMemo.has(text))
+			if (pending.length === 0) break
+			const until = deadline(settings.timeBudgetMs, useFirstBudget)
+			useFirstBudget = false
+			let shouldRetry = false
+
+			// **まとめて走らせる。** 1 つずつ待つと、初回の長い履歴で本文の数だけ待ち時間が
+			// 積み上がる。数を抑えるのは、全部同時に投げると記憶が膨らむためである。
+			for (let at = 0; at < pending.length; at += NER_AT_ONCE) {
+				if (until !== undefined && Date.now() > until) {
+					lastFailure = `時間内に終わらなかった（残り ${pending.length - at} 件は基本検出だけ）`
+					shouldRetry = true
+					break
+				}
+
+				const batch = pending.slice(at, at + NER_AT_ONCE)
+				const found = await Promise.allSettled(batch.map((text) => detectWith(backend, text, options)))
+				found.forEach((one, index) => {
+					if (one.status === "fulfilled") {
+						this.nerMemo.set(batch[index], one.value)
+						learned = true
+					}
+				})
+
+				const failed = found.find((one) => one.status === "rejected")
+				if (failed) {
+					const error = (failed as PromiseRejectedResult).reason
+					this.backend = undefined
+					this.backendTried = false
+					lastFailure = error instanceof Error ? error.message : String(error)
+					shouldRetry = true
+					break
+				}
+			}
+
+			if (!shouldRetry) break
+			if (retriesLeft-- > 0) continue
+			this.trouble(directory, lastFailure)
+			break
+		}
+
+		// 前回は基本検出だけだった本文も、今回増えた推論結果で伏せ直す。
+		if (learned) {
+			this.memo.clear()
+			this.memo.bytes = 0
 		}
 
 		// **判定が終わってから記録する。** 途中で失敗すれば `this.backend` は空になる。

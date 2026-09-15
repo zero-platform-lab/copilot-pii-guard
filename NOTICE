@@ -9,11 +9,7 @@ You may obtain a copy of the License at
 
 --------------------------------------------------------------------------------
 
-`src/pii/` は local-code-agent（Apache-2.0）の `src/services/pii/` を写したものである。
-
-    https://github.com/zero-platform-lab/local-code-agent
-
-第 2 層が読み込むモデルは、次のものを ONNX へ変換し int8 へ落としたものである。
+固有名詞検出が読み込むモデルは、次のものを ONNX へ変換し int8 へ落としたものである。
 このリポジトリはモデルのファイルを含まない。
 
     tsmatz/xlm-roberta-ner-japanese (MIT)

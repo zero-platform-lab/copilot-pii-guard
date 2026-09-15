@@ -56,6 +56,12 @@ describe("チェックの形を、名前の並びへ変える", () => {
 
 		expect(settings.properNouns?.entities).toEqual(["PER", "ORG"])
 	})
+
+	it("第 2 層の再試行回数を読む", () => {
+		const settings = withConfig({ "properNouns.retryCount": 3 })
+
+		expect(settings.properNouns?.retryCount).toBe(3)
+	})
 })
 
 describe("package.json と食い違わない", () => {

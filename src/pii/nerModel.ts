@@ -14,7 +14,7 @@ import { getGlobalAgentDirectory } from "../paths"
  * 途中で欠けたファイルを読み込むと、読み込みが失敗するか、**静かに検出が甘くなる**。
  * 後者は画面に何も出ないので、誰も気づけない。
  *
- * **仕組み。** 配るときに作った `SHA256SUMS` と突き合わせる（`scripts/build-ner-model.sh`）。
+ * **仕組み。** 配るときに作った `SHA256SUMS` と突き合わせる（`scripts/build_ner_model.py`）。
  * 網から取った場合も、媒体で運んだ場合も、同じ値で確かめる。閉鎖環境のために別の作りを
  * 持たない（`FR-PII-23d`）。
  *

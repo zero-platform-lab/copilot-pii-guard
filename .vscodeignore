@@ -8,3 +8,5 @@ tsconfig.json
 vitest.*
 .vscode/**
 **/*.map
+**/__pycache__/**
+**/*.pyc

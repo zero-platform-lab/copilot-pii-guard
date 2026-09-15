@@ -24,12 +24,14 @@ const ner = vi.hoisted(() => ({
 	loadThrows: false,
 	detectThrows: false,
 	runtime: true,
+	loads: 0,
 	beforeDetect: undefined as (() => void) | undefined,
 }))
 
 // モデルは 265 MB あり、試験のたびに読めない。読む段だけを偽物にする。
 vi.mock("../nerBackend", () => ({
 	loadBackend: async () => {
+		ner.loads++
 		if (ner.loadThrows) throw new Error("native を読めない")
 		return { backend: ner.backend, check: ner.check }
 	},
@@ -50,7 +52,14 @@ vi.mock("../nerModel", async (importOriginal) => ({
 	hasNerRuntime: () => ner.runtime,
 }))
 
-import { lookupOf, NER_AT_ONCE, TaskPiiMasker } from "../TaskPiiMasker"
+import {
+	lookupOf,
+	NER_AT_ONCE,
+	NER_FIRST_TIME_BUDGET_MULTIPLIER,
+	NER_RETRY_COUNT,
+	NER_TIME_BUDGET,
+	TaskPiiMasker,
+} from "../TaskPiiMasker"
 import { resetSessionVault, sessionVault } from "../maskConversation"
 
 // **対応表は本製品で 1 つを共有する（`FR-PII-02b`）。** 捨てないと、前の試験で
@@ -480,6 +489,7 @@ describe("第 2 層が投げても、第 1 層は動かす（FR-PII-23b）", () 
 		ner.detectThrows = false
 		ner.beforeDetect = undefined
 		ner.runtime = true
+		ner.loads = 0
 	})
 
 	const settings = { enabled: true, kinds: ["email", "person"] as const, properNouns: { enabled: true } }
@@ -493,11 +503,43 @@ describe("第 2 層が投げても、第 1 層は動かす（FR-PII-23b）", () 
 
 		expect(result.messages[0]).toMatchObject({ content: "森が担当 {{email-001}}" })
 		expect(result.troubles.join()).toContain("native を読めない")
+		expect(NER_RETRY_COUNT).toBe(3)
+		expect(ner.loads).toBe(NER_RETRY_COUNT + 1)
+	})
+
+	it("設定した回数だけ読み込みを再試行する", async () => {
+		ner.loadThrows = true
+		const masker = new TaskPiiMasker({
+			...settings,
+			properNouns: { enabled: true, retryCount: 1 },
+		} as never)
+
+		await masker.maskForRequest("", [message("森が担当")])
+
+		expect(ner.loads).toBe(2)
+	})
+
+	it("読み込みが一度失敗しても、次の要求で再試行する", async () => {
+		ner.loadThrows = true
+		const masker = new TaskPiiMasker({
+			...settings,
+			properNouns: { enabled: true, retryCount: 0 },
+		} as never)
+		await masker.maskForRequest("", [message("森が担当")])
+
+		ner.loadThrows = false
+		const second = await masker.maskForRequest("", [message("森が担当")])
+
+		expect(ner.loads).toBe(2)
+		expect(second.messages[0]).toMatchObject({ content: "{{person-001}}が担当" })
 	})
 
 	it("判定が投げても、会話は止まらない", async () => {
 		ner.detectThrows = true
-		const masker = new TaskPiiMasker(settings as never)
+		const masker = new TaskPiiMasker({
+			...settings,
+			properNouns: { enabled: true, retryCount: 0 },
+		} as never)
 
 		const result = await masker.maskForRequest("", [message("森が担当 taro@corp.example")])
 
@@ -517,7 +559,7 @@ describe("第 2 層が投げても、第 1 層は動かす（FR-PII-23b）", () 
 		expect(second.messages[0]).toMatchObject({ content: "{{person-001}}が担当" })
 	})
 
-	it("一部のまとまりが投げても、済んだぶんは残す", async () => {
+	it("一部のまとまりが投げたら、済んだぶんを残して未処理分を再試行する", async () => {
 		// 捨てると、判定できていた本文まで第 1 層だけになる。しかもその結果は記憶へ
 		// 残り、この会話の間ずっと効かなくなる。
 		const masker = new TaskPiiMasker(settings as never)
@@ -530,9 +572,10 @@ describe("第 2 層が投げても、第 1 層は動かす（FR-PII-23b）", () 
 
 		const result = await masker.maskForRequest("", many)
 
-		// 1 つ目のまとまりは判定できている。
+		// 1 つ目のまとまりは保持し、失敗したまとまりだけを読み直したモデルで再試行する。
 		expect(result.messages[0]).toMatchObject({ content: "{{person-001}}が担当 0" })
-		expect(result.troubles.join()).toContain("途中で失敗した")
+		expect(result.messages.at(-1)).toMatchObject({ content: `{{person-001}}が担当 ${NER_AT_ONCE + 1}` })
+		expect(result.troubles).toEqual([])
 	})
 })
 
@@ -549,11 +592,18 @@ describe("時間で打ち切る（FR-PII-23f）", () => {
 	it("上限を超えたら、そこまでの結果で先へ進む", async () => {
 		// **第 2 層は取りこぼしてよい層である。** 全部を拾おうとして送信を待たせない。
 		// 時計を進めて、2 つ目のまとまりへ入る前に上限を超えさせる。
+		const masker = new TaskPiiMasker({
+			enabled: true,
+			kinds: ["person"],
+			properNouns: { enabled: true, retryCount: 0 },
+		} as never)
+		// 初回だけは上限を延ばすので、先にモデルと最初の判定を済ませる。
+		await masker.maskForRequest("", [message("準備")])
+
 		const started = Date.now()
 		let call = 0
 		vi.spyOn(Date, "now").mockImplementation(() => started + (call++ > 1 ? 11_000 : 0))
 
-		const masker = new TaskPiiMasker({ enabled: true, kinds: ["person"], properNouns: { enabled: true } } as never)
 		const many = Array.from({ length: NER_AT_ONCE * 3 }, (_, at) => message(`森が担当 ${at}`))
 
 		const result = await masker.maskForRequest("", many)
@@ -567,6 +617,79 @@ describe("時間で打ち切る（FR-PII-23f）", () => {
 			content: `森が担当 ${NER_AT_ONCE * 3 - 1}`,
 		})
 
+		vi.restoreAllMocks()
+	})
+
+	it("モデルを読み込む初回だけ、設定した上限を延ばす", async () => {
+		const started = Date.now()
+		let call = 0
+		const elapsed = NER_TIME_BUDGET + 1
+		vi.spyOn(Date, "now").mockImplementation(() => started + (call++ > 1 ? elapsed : 0))
+
+		const masker = new TaskPiiMasker({
+			enabled: true,
+			kinds: ["person"],
+			properNouns: { enabled: true, retryCount: 0 },
+		} as never)
+		const many = Array.from({ length: NER_AT_ONCE * 2 }, (_, at) => message(`森が担当 ${at}`))
+
+		const first = await masker.maskForRequest("", many)
+
+		expect(NER_FIRST_TIME_BUDGET_MULTIPLIER).toBeGreaterThan(1)
+		expect(first.troubles).toEqual([])
+		expect(first.messages.at(-1)).toMatchObject({ content: `{{person-001}}が担当 ${NER_AT_ONCE * 2 - 1}` })
+
+		vi.restoreAllMocks()
+
+		const secondStarted = Date.now()
+		call = 0
+		vi.spyOn(Date, "now").mockImplementation(() => secondStarted + (call++ > 1 ? elapsed : 0))
+		const newMany = Array.from({ length: NER_AT_ONCE * 2 }, (_, at) => message(`森が再担当 ${at}`))
+
+		const second = await masker.maskForRequest("", newMany)
+
+		expect(second.troubles.join()).toContain("時間内に終わらなかった")
+		vi.restoreAllMocks()
+	})
+
+	it("時間切れで残った本文は、次の要求で再試行する", async () => {
+		const masker = new TaskPiiMasker({
+			enabled: true,
+			kinds: ["person"],
+			properNouns: { enabled: true, retryCount: 0 },
+		} as never)
+		await masker.maskForRequest("", [message("準備")])
+
+		const started = Date.now()
+		let call = 0
+		vi.spyOn(Date, "now").mockImplementation(() => started + (call++ > 1 ? NER_TIME_BUDGET + 1 : 0))
+		const many = Array.from({ length: NER_AT_ONCE * 2 }, (_, at) => message(`森が担当 ${at}`))
+
+		const first = await masker.maskForRequest("", many)
+		expect(first.messages.at(-1)).toMatchObject({ content: `森が担当 ${NER_AT_ONCE * 2 - 1}` })
+
+		vi.restoreAllMocks()
+		const callsBeforeRetry = ner.calls
+		const second = await masker.maskForRequest("", many)
+
+		expect(ner.calls).toBe(callsBeforeRetry + NER_AT_ONCE)
+		expect(second.messages.at(-1)).toMatchObject({ content: `{{person-001}}が担当 ${NER_AT_ONCE * 2 - 1}` })
+	})
+
+	it("時間切れの未処理分を、既定回数の範囲で同じ要求内に再試行する", async () => {
+		const masker = new TaskPiiMasker({ enabled: true, kinds: ["person"], properNouns: { enabled: true } } as never)
+		await masker.maskForRequest("", [message("準備")])
+
+		const started = Date.now()
+		let call = 0
+		vi.spyOn(Date, "now").mockImplementation(() => started + (call++ > 1 ? NER_TIME_BUDGET + 1 : 0))
+		const many = Array.from({ length: NER_AT_ONCE * 2 }, (_, at) => message(`森が担当 ${at}`))
+
+		const result = await masker.maskForRequest("", many)
+
+		expect(NER_RETRY_COUNT).toBe(3)
+		expect(result.troubles).toEqual([])
+		expect(result.messages.at(-1)).toMatchObject({ content: `{{person-001}}が担当 ${NER_AT_ONCE * 2 - 1}` })
 		vi.restoreAllMocks()
 	})
 
