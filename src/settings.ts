@@ -8,6 +8,24 @@ import * as vscode from "vscode"
 
 import type { PiiMasking } from "./types"
 
+/**
+ * チェックの入っている名前だけを並べる。
+ *
+ * **設定はチェックの形で持つ。** 配列だと、設定の画面では 1 行ずつ足す形になり、何を
+ * 書けるのかも、その種類が何を指すのかも画面に出ない。真偽値を並べれば、種類ごとに
+ * 説明が付く。読むほうは名前の並びが要るので、ここで変える。
+ *
+ * **読めなければ `undefined` を返す。** 空の配列を返すと「1 つも伏せない」という意思に
+ * なり、設定を読めていないだけなのに伏せずに送ってしまう。
+ */
+function checkedNames<T extends string>(value: Record<string, boolean> | undefined): T[] | undefined {
+	if (!value || typeof value !== "object") return undefined
+
+	return Object.entries(value)
+		.filter(([, on]) => on === true)
+		.map(([name]) => name as T)
+}
+
 /** 設定の根。`package.json` の `contributes.configuration` と揃える。 */
 const ROOT = "piiGuard"
 
@@ -23,7 +41,9 @@ export function readSettings(): PiiMasking {
 	return {
 		enabled: config.get<boolean>("enabled"),
 		restore: config.get<boolean>("restore"),
-		kinds: config.get<PiiMasking["kinds"]>("kinds"),
+		kinds: checkedNames<NonNullable<PiiMasking["kinds"]>[number]>(
+			config.get<Record<string, boolean>>("kinds"),
+		),
 		terms: config.get<PiiMasking["terms"]>("terms"),
 		dictionaryPaths: config.get<string[]>("dictionaryPaths"),
 		secretLabels: config.get<string[]>("secretLabels"),
@@ -32,7 +52,9 @@ export function readSettings(): PiiMasking {
 			modelPath: config.get<string>("properNouns.modelPath"),
 			modelUrl: config.get<string>("properNouns.modelUrl"),
 			minScore: config.get<number>("properNouns.minScore"),
-			entities: config.get<PiiMasking["properNouns"]>("properNouns.entities") as never,
+			entities: checkedNames<NonNullable<NonNullable<PiiMasking["properNouns"]>["entities"]>[number]>(
+				config.get<Record<string, boolean>>("properNouns.entities"),
+			),
 			timeBudgetMs: config.get<number>("properNouns.timeBudgetMs"),
 		},
 	}

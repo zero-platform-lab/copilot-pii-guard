@@ -2,7 +2,7 @@
 	"name": "copilot-pii-guard",
 	"displayName": "PII Guard for Copilot",
 	"description": "Copilot へ送る前に、氏名・社名・連絡先などを伏せ字へ置き換えます。",
-	"version": "0.1.1",
+	"version": "0.2.0",
 	"publisher": "internal",
 	"private": true,
 	"license": "Apache-2.0",
@@ -42,41 +42,85 @@
 					"description": "応答の伏せ字を元の値へ戻して表示します。切ると {{person-001}} のまま表示します。"
 				},
 				"piiGuard.kinds": {
-					"type": "array",
-					"items": {
-						"type": "string",
-						"enum": [
-							"email",
-							"phone",
-							"address",
-							"postal",
-							"person",
-							"org",
-							"card",
-							"mynumber",
-							"secret",
-							"url",
-							"path",
-							"ip",
-							"term"
-						]
+					"type": "object",
+					"markdownDescription": "伏せる種類。外した種類はそのまま送られます。",
+					"additionalProperties": false,
+					"default": {
+						"person": true,
+						"org": true,
+						"term": true,
+						"email": true,
+						"phone": true,
+						"host": true,
+						"ip": true,
+						"card": true,
+						"secret": true,
+						"zip": true,
+						"address": true,
+						"mynumber": true
 					},
-					"default": [
-						"email",
-						"phone",
-						"address",
-						"postal",
-						"person",
-						"org",
-						"card",
-						"mynumber",
-						"secret",
-						"url",
-						"path",
-						"ip",
-						"term"
-					],
-					"description": "伏せる種類。外した種類はそのまま送られます。"
+					"properties": {
+						"person": {
+							"type": "boolean",
+							"default": true,
+							"markdownDescription": "辞書に書いた氏名。前後の文から当てるのは第 2 層"
+						},
+						"org": {
+							"type": "boolean",
+							"default": true,
+							"markdownDescription": "辞書に書いた社名・団体名。前後の文から当てるのは第 2 層"
+						},
+						"term": {
+							"type": "boolean",
+							"default": true,
+							"markdownDescription": "辞書に書いた、種類を決めていない語（案件コード、社員番号など）"
+						},
+						"email": {
+							"type": "boolean",
+							"default": true,
+							"markdownDescription": "メールアドレス"
+						},
+						"phone": {
+							"type": "boolean",
+							"default": true,
+							"markdownDescription": "電話番号（日本の形）"
+						},
+						"host": {
+							"type": "boolean",
+							"default": true,
+							"markdownDescription": "社内向けの宛先（`.local` `.internal` などで終わる名前）"
+						},
+						"ip": {
+							"type": "boolean",
+							"default": true,
+							"markdownDescription": "外向けの IP アドレス。社内向けと `localhost` は伏せない"
+						},
+						"card": {
+							"type": "boolean",
+							"default": true,
+							"markdownDescription": "クレジットカード番号。検査数字が合うものだけ"
+						},
+						"secret": {
+							"type": "boolean",
+							"default": true,
+							"markdownDescription": "API 鍵・token・パスワード。`AKIA…` のような形と、ラベルの付いた値"
+						},
+						"zip": {
+							"type": "boolean",
+							"default": true,
+							"markdownDescription": "郵便番号。`〒` か「郵便番号」の語が前にあるときだけ"
+						},
+						"address": {
+							"type": "boolean",
+							"default": true,
+							"markdownDescription": "住所。都道府県か市区町村から始まり、番地を含む並び"
+						},
+						"mynumber": {
+							"type": "boolean",
+							"default": true,
+							"markdownDescription": "マイナンバー。検査数字が合うものだけ"
+						}
+					}
 				},
 				"piiGuard.terms": {
 					"type": "array",
@@ -128,29 +172,61 @@
 					"description": "固有名詞の検出（第 2 層）を使います。モデルのファイルを別に置く必要があります（約 282 MB）。"
 				},
 				"piiGuard.properNouns.entities": {
-					"type": "array",
-					"items": {
-						"type": "string",
-						"enum": [
-							"PER",
-							"ORG",
-							"ORG-P",
-							"ORG-O",
-							"LOC",
-							"INS",
-							"PRD",
-							"EVT"
-						]
+					"type": "object",
+					"markdownDescription": "第 2 層で伏せる区分。モデルが判定した区分のうち、入にしたものだけを伏せます。",
+					"additionalProperties": false,
+					"default": {
+						"PER": true,
+						"ORG": true,
+						"ORG-P": true,
+						"ORG-O": true,
+						"LOC": true,
+						"INS": true,
+						"PRD": false,
+						"EVT": false
 					},
-					"default": [
-						"PER",
-						"ORG",
-						"ORG-P",
-						"ORG-O",
-						"LOC",
-						"INS"
-					],
-					"description": "伏せる区分。PRD（製品名）を入れると技術の話が読めなくなります。"
+					"properties": {
+						"PER": {
+							"type": "boolean",
+							"default": true,
+							"markdownDescription": "人名"
+						},
+						"ORG": {
+							"type": "boolean",
+							"default": true,
+							"markdownDescription": "会社などの組織"
+						},
+						"ORG-P": {
+							"type": "boolean",
+							"default": true,
+							"markdownDescription": "政治的な組織"
+						},
+						"ORG-O": {
+							"type": "boolean",
+							"default": true,
+							"markdownDescription": "その他の組織"
+						},
+						"LOC": {
+							"type": "boolean",
+							"default": true,
+							"markdownDescription": "地名"
+						},
+						"INS": {
+							"type": "boolean",
+							"default": true,
+							"markdownDescription": "施設名"
+						},
+						"PRD": {
+							"type": "boolean",
+							"default": false,
+							"markdownDescription": "製品名。**入れると技術の話が読めなくなる**"
+						},
+						"EVT": {
+							"type": "boolean",
+							"default": false,
+							"markdownDescription": "イベント名"
+						}
+					}
 				},
 				"piiGuard.properNouns.minScore": {
 					"type": "number",

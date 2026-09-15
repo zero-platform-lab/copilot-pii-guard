@@ -71,6 +71,17 @@ code --install-extension bin/copilot-pii-guard-linux-x64-0.1.0.vsix
 @mask この議事録を要約して
 ```
 
+**返事の 1 行目に、いまの状態が必ず出る。** 出さないと、伏せたのか素通りしたのかが
+分からない。
+
+```
+🛡 伏せました。 氏名 2 / 社名 1 / メールアドレス 1
+```
+
+```
+⚠️ 伏せていません。設定 piiGuard.enabled が切になっています。
+```
+
 ### エディタ
 
 右クリックに 3 つ増える。
@@ -102,6 +113,8 @@ VS Code の設定で `piiGuard` を検索する。
 | `piiGuard.properNouns.timeBudgetMs` | 3000 | 判定の上限（ミリ秒）。**0 なら待ち続ける** |
 | `piiGuard.properNouns.modelPath` | 空 | モデルの置き場所。空なら `~/.agent/pii-ner` |
 | `piiGuard.properNouns.modelUrl` | 空 | モデルの取得先。**既定の取得先は持たない** |
+| `piiGuard.kinds` | 全部入 | 伏せる種類。**チェックで選ぶ**（12 種類） |
+| `piiGuard.properNouns.entities` | 6 つ入 | 第 2 層で伏せる区分。製品名とイベント名は既定で外してある |
 
 ### 辞書の書き方
 
@@ -116,15 +129,34 @@ VS Code の設定で `piiGuard` を検索する。
 ## 第 2 層を使うには
 
 1. 設定で `piiGuard.properNouns.enabled` を入にする
-2. `~/.agent/pii-ner` へモデルの 6 ファイルを置く
+2. `~/.agent/pii-ner` へモデルの 6 ファイルを置く（[model-ner-ja-v1](https://github.com/zero-platform-lab/copilot-pii-guard/releases/tag/model-ner-ja-v1)）
 3. VS Code を開き直す
+
+置き方は次のとおり。**`model_quantized.onnx` だけ `onnx/` の下**へ置く。
+
+```
+~/.agent/pii-ner/
+  ├ onnx/
+  │   └ model_quantized.onnx
+  ├ config.json
+  ├ tokenizer.json
+  ├ tokenizer_config.json
+  ├ special_tokens_map.json
+  └ SHA256SUMS
+```
 
 **閉鎖環境でも使える。** 別の機械で保存したファイルを媒体で運び、置き場所へ置けばよい。
 拡張から見れば、取得した場合と区別が付かない。
 
-網がある環境なら、`piiGuard.properNouns.modelUrl` に取得先を書いてから
-`PII Guard: モデルを取得する` を実行する。**既定の取得先は持たない。** 持つと、誰の指示も
-無く 282 MB を取りに行く経路を抱えることになる。
+網がある環境なら、`piiGuard.properNouns.modelUrl` にこれを書いてから
+`PII Guard: モデルを取得する` を実行する。
+
+```
+https://github.com/zero-platform-lab/copilot-pii-guard/releases/download/model-ner-ja-v1
+```
+
+**既定の取得先は持たない。** 持つと、誰の指示も無く 282 MB を取りに行く経路を抱える
+ことになる。
 
 ## 中身
 

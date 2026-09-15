@@ -59,6 +59,8 @@ async function ask(settings: object, reply: string[] = ["わかりました"]) {
 
 	const handler = createHandler({
 		masker: () => new TaskPiiMasker(settings as never),
+		// 切のときも確かめられるよう、設定から決める。
+		isEnabled: () => (settings as { enabled?: boolean }).enabled !== false,
 		selectModel: async () => fake.model as never,
 	})
 
@@ -104,10 +106,49 @@ describe("伏せてから Copilot へ送る", () => {
 		expect(shown).not.toContain("{{")
 	})
 
+	it("伏せたことと、その件数を必ず出す", async () => {
+		// **出さないと、伏せたのか素通りしたのかが分からない。** 画面は何も変わらない
+		// ので、これがいちばん気づけない失敗である。
+		const { shown } = await ask({
+			enabled: true,
+			terms: [{ value: SECRETS.org, kind: "org" }],
+		})
+
+		expect(shown).toContain("伏せました")
+		expect(shown).toContain("社名 1")
+		expect(shown).toContain("メールアドレス 1")
+	})
+
+	it("切のときは、伏せていないことをはっきり出す", async () => {
+		// 切ったまま話しかけると、生の文がそのまま Copilot へ渡る。**黙らない。**
+		const { shown, sent } = await ask({ enabled: false })
+
+		expect(shown).toContain("伏せていません")
+		expect(shown).toContain("piiGuard.enabled")
+		// 実際に生の文が渡っていることも見る。出す文と実物が食い違っては意味が無い。
+		expect(sent).toContain(SECRETS.email)
+	})
+
+	it("伏せるものが無ければ、そう出す", async () => {
+		const fake = fakeModel(["はい"])
+		const out = fakeStream()
+		const handler = createHandler({
+			masker: () => new TaskPiiMasker({ enabled: true } as never),
+			isEnabled: () => true,
+			selectModel: async () => fake.model as never,
+		})
+
+		await handler({ prompt: "今日の天気は" } as never, {} as never, out.stream as never, {} as never)
+
+		// 「伏せました」と紛れない文にする。0 件なのに伏せたように見せない。
+		expect(out.parts.join("")).toContain("伏せるものは見つかりませんでした")
+	})
+
 	it("モデルを選べなければ、送らずに理由を出す", async () => {
 		const out = fakeStream()
 		const handler = createHandler({
 			masker: () => new TaskPiiMasker({ enabled: true } as never),
+			isEnabled: () => true,
 			selectModel: async () => undefined,
 		})
 

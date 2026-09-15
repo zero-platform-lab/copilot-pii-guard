@@ -30,7 +30,7 @@ function piiMasker(): TaskPiiMasker {
 export function activate(context: vscode.ExtensionContext): void {
 	const participant = vscode.chat.createChatParticipant(
 		"pii-guard.mask",
-		createHandler({ masker: piiMasker }),
+		createHandler({ masker: piiMasker, isEnabled: () => readSettings().enabled !== false }),
 	)
 	participant.iconPath = new vscode.ThemeIcon("shield")
 
