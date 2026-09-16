@@ -30,7 +30,7 @@ const LABELS: Record<string, string> = {
 	host: "社内の宛先",
 	ip: "IP アドレス",
 	card: "カード番号",
-	secret: "鍵",
+	secret: "トークン",
 	zip: "郵便番号",
 	address: "住所",
 	mynumber: "マイナンバー",
