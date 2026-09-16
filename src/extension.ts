@@ -8,7 +8,7 @@ import * as vscode from "vscode"
 import { TaskPiiMasker } from "./pii/TaskPiiMasker"
 import { checkSecretsInActiveEditor, maskSecretsInActiveEditor, restoreSecretsInActiveEditor } from "./pii/maskEditor"
 import { addSelectionToDictionary, exportDictionary } from "./pii/dictionaryEditor"
-import { sessionVault } from "./pii/maskConversation"
+import { PiiVaultLimitError, sessionVault } from "./pii/maskConversation"
 import { clearSessionVault } from "./pii/sessionVaultEditor"
 import { FileVaultController } from "./pii/fileVault"
 import { createHandler } from "./participant"
@@ -53,16 +53,24 @@ export function activate(context: vscode.ExtensionContext): void {
 		),
 		vscode.commands.registerCommand("piiGuard.maskFile", async () => {
 			const vault = sessionVault()
+			vault.setMaxEntries(readSettings().sessionVault?.maxEntries)
+			const checkpoint = vault.checkpoint()
 			const uri = vscode.window.activeTextEditor?.document.uri
 			if (uri && !(await fileVault.prepare(uri, vault))) return
-			await maskSecretsInActiveEditor(
-				readSettings(),
-				vault,
-				(texts) => piiMasker().properNounsFor(texts),
-				async (uri, entries) => {
-					await fileVault.record(uri, entries)
-				},
-			)
+			try {
+				await maskSecretsInActiveEditor(
+					readSettings(),
+					vault,
+					(texts) => piiMasker().properNounsFor(texts),
+					async (uri, entries) => {
+						await fileVault.record(uri, entries)
+					},
+				)
+			} catch (error) {
+				if (!(error instanceof PiiVaultLimitError)) throw error
+				vault.rollback(checkpoint)
+				await vscode.window.showErrorMessage(t("common:pii.sessionVault.maxEntries"))
+			}
 		}),
 		vscode.commands.registerCommand("piiGuard.restoreFile", () =>
 			restoreSecretsInActiveEditor((text, uri) => fileVault.restore(uri, text, (one) => sessionVault().restore(one))),

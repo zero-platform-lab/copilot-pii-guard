@@ -11,6 +11,8 @@ const MESSAGES: Record<string, string> = {
 		"{{scope}}の対応 {{count}} 件を消去します。消去後、この対応を使った伏せ字は元の値へ戻せません。",
 	"common:pii.clearVault": "消去する",
 	"common:pii.vaultCleared": "Session Vaultから {{count}} 件を消去しました。",
+	"common:pii.sessionVault.maxEntries":
+		"Session Vaultの対応数が設定上限に達したため、伏せ字化を停止しました。上限を増やすか、Session Vaultを消去してください。",
 	"common:pii.fileVault.enable": "有効にする",
 	"common:pii.fileVault.confirmEnable":
 		"{{file}}のFile Vaultを有効にします。対応 {{count}} 件を暗号化し、ワークスペース専用領域へ保存します。暗号鍵は別の安全な領域へ保存します。",

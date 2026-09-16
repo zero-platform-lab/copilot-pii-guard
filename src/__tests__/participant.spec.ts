@@ -11,7 +11,7 @@
 // 確かめているのか分からない。
 
 import { TaskPiiMasker } from "../pii/TaskPiiMasker"
-import { resetSessionVault } from "../pii/maskConversation"
+import { PiiVault, resetSessionVault } from "../pii/maskConversation"
 import { createHandler } from "../participant"
 
 vi.mock("../paths", () => ({ getGlobalAgentDirectory: () => "/w/存在しない" }))
@@ -289,6 +289,29 @@ describe("伏せてから Copilot へ送る", () => {
 
 		// 「伏せました」と紛れない文にする。0 件なのに伏せたように見せない。
 		expect(out.parts.join("")).toContain("伏せるものは見つかりませんでした")
+	})
+
+	it("Session Vault上限に達したらモデルへ送らず、理由を表示する", async () => {
+		const fake = fakeModel(["送られない"])
+		const out = fakeStream()
+		const vault = new PiiVault()
+		const handler = createHandler({
+			masker: () =>
+				new TaskPiiMasker({ enabled: true, sessionVault: { maxEntries: 1 } } as never, vault),
+			isEnabled: () => true,
+			selectModel: async () => fake.model as never,
+		})
+
+		await handler(
+			{ prompt: "alice@corp.example と bob@corp.example" } as never,
+			{ history: [] } as never,
+			out.stream as never,
+			{} as never,
+		)
+
+		expect(fake.seen).toHaveLength(0)
+		expect(vault.size).toBe(0)
+		expect(out.parts.join("")).toContain("Session Vaultの対応数が設定上限に達した")
 	})
 
 	it("モデルを選べなければ、送らずに理由を出す", async () => {

@@ -41,6 +41,15 @@ import { PII_KINDS, type PiiKind } from "./types"
  * **番号を持つのはここである。** 置き換えの側で番号を振ると、要求ごとに 1 から振り直され、
  * 同じ番号が別の値へ結び付く。
  */
+export const DEFAULT_SESSION_VAULT_MAX_ENTRIES = 10_000
+
+export class PiiVaultLimitError extends Error {
+	constructor() {
+		super("Session Vault reached its configured entry limit")
+		this.name = "PiiVaultLimitError"
+	}
+}
+
 export class PiiVault implements PlaceholderAllocator {
 	/**
 	 * 割り当ての本体は `createAllocator` を使う。
@@ -50,6 +59,23 @@ export class PiiVault implements PlaceholderAllocator {
 	 */
 	private readonly allocator = createAllocator()
 	private currentRevision = 0
+	private maxEntries = DEFAULT_SESSION_VAULT_MAX_ENTRIES
+
+	setMaxEntries(value: number | undefined): void {
+		this.maxEntries = Number.isInteger(value) && Number(value) >= 0 ? Number(value) : DEFAULT_SESSION_VAULT_MAX_ENTRIES
+	}
+
+	private existing(kind: PiiKind, value: string): string | undefined {
+		const prefix = `{{${kind}-`
+		for (const [placeholder, stored] of this.allocator.table) {
+			if (stored === value && placeholder.startsWith(prefix)) return placeholder
+		}
+		return undefined
+	}
+
+	private assertCapacity(additions = 1): void {
+		if (this.maxEntries > 0 && this.size + additions > this.maxEntries) throw new PiiVaultLimitError()
+	}
 
 	/** 伏せ字 → 元の値。割り当て係としてもこの表を差し出す。 */
 	get table(): ReadonlyMap<string, string> {
@@ -70,6 +96,14 @@ export class PiiVault implements PlaceholderAllocator {
 		return this.currentRevision
 	}
 
+	checkpoint(): ReadonlySet<string> {
+		return new Set(this.allocator.table.keys())
+	}
+
+	rollback(checkpoint: ReadonlySet<string>): void {
+		this.clearSnapshot([...this.allocator.table.keys()].filter((placeholder) => !checkpoint.has(placeholder)))
+	}
+
 	/**
 	 * 同じ種類と値には同じ伏せ字を返す。
 	 *
@@ -79,6 +113,9 @@ export class PiiVault implements PlaceholderAllocator {
 	 * 書かれる。
 	 */
 	assign(kind: PiiKind, value: string): string {
+		const existing = this.existing(kind, value)
+		if (existing) return existing
+		this.assertCapacity()
 		return this.allocator.assign(kind, value)
 	}
 
@@ -89,9 +126,20 @@ export class PiiVault implements PlaceholderAllocator {
 
 	/** 保存済み対応を取り込み、衝突した伏せ字には別の番号を割り当てる。 */
 	importEntries(entries: Iterable<readonly [string, string]>): ReadonlyMap<string, string> {
+		const accepted = [...entries].filter(([placeholder]) => {
+			const match = /^\{\{([a-z]+)-(\d{3,})\}\}$/.exec(placeholder)
+			return Boolean(match && PII_KINDS.includes(match[1] as PiiKind))
+		})
+		const additions = new Set(
+			accepted.flatMap(([placeholder, value]) => {
+				const kind = /^\{\{([a-z]+)-/.exec(placeholder)?.[1] as PiiKind
+				return this.existing(kind, value) ? [] : [`${kind}\0${value}`]
+			}),
+		).size
+		this.assertCapacity(additions)
 		const remapped = new Map<string, string>()
 		const before = this.size
-		for (const [placeholder, value] of entries) {
+		for (const [placeholder, value] of accepted) {
 			const match = /^\{\{([a-z]+)-(\d{3,})\}\}$/.exec(placeholder)
 			if (!match || !PII_KINDS.includes(match[1] as PiiKind)) continue
 			const kind = match[1] as PiiKind

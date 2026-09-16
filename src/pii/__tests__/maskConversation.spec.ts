@@ -9,12 +9,39 @@
 
 import type { AgentMessage } from "../../types"
 
-import { collectTexts, PiiVault, maskConversation, type MaskMemo } from "../maskConversation"
+import { collectTexts, PiiVault, PiiVaultLimitError, maskConversation, type MaskMemo } from "../maskConversation"
 
 const message = (role: "user" | "assistant", content: string): AgentMessage =>
 	({ type: "message", role, content }) as AgentMessage
 
 describe("maskConversation", () => {
+	it("Session Vault上限では既存対応を再利用し、新しい対応を追加しない", () => {
+		const vault = new PiiVault()
+		vault.setMaxEntries(1)
+		expect(vault.assign("email", "alice@corp.example")).toBe("{{email-001}}")
+		expect(vault.assign("email", "alice@corp.example")).toBe("{{email-001}}")
+		expect(() => vault.assign("email", "bob@corp.example")).toThrow(PiiVaultLimitError)
+		expect(vault.size).toBe(1)
+	})
+
+	it("File Vault取込が上限を越える場合は途中まで追加しない", () => {
+		const vault = new PiiVault()
+		vault.setMaxEntries(1)
+		expect(() =>
+			vault.importEntries([
+				["{{email-001}}", "alice@corp.example"],
+				["{{email-002}}", "bob@corp.example"],
+			]),
+		).toThrow(PiiVaultLimitError)
+		expect(vault.size).toBe(0)
+	})
+
+	it("Session Vault上限が0なら無制限", () => {
+		const vault = new PiiVault()
+		vault.setMaxEntries(0)
+		for (let index = 0; index < 20; index++) vault.assign("email", `${index}@corp.example`)
+		expect(vault.size).toBe(20)
+	})
 	it("指示と応答とツールの出力をまとめて伏せる", () => {
 		const messages: AgentMessage[] = [
 			message("user", "taro@corp.example へ送って"),

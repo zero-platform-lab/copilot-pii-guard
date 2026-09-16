@@ -68,6 +68,13 @@
 					"maximum": 3650,
 					"markdownDescription": "File Vaultを最終利用から保持する日数です。`0` は時間による期限なしです。対象ファイルが無くなった場合は、この設定にかかわらず削除します。"
 				},
+				"piiGuard.sessionVault.maxEntries": {
+					"type": "integer",
+					"default": 10000,
+					"minimum": 0,
+					"maximum": 1000000,
+					"markdownDescription": "Session Vaultへ登録できる対応数の上限です。`0` は無制限です。"
+				},
 				"piiGuard.fileVault.maxFiles": {
 					"type": "integer",
 					"default": 100,
