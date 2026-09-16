@@ -369,7 +369,12 @@ export class FileVaultController {
 	/** ファイル道具向け。衝突した保存済み伏せ字を今回の番号へ置き換える関数を返す。 */
 	async prepareToolPath(path: string, vault: PiiVault): Promise<(text: string) => string> {
 		const uri = uriForToolPath(path)
-		const identity = uri && fileVaultIdentity(uri)
+		return uri ? this.prepareReference(uri, vault) : (text) => text
+	}
+
+	/** 添付ファイルや選択範囲向け。保存済み対応を取り込み、番号衝突を置き換える。 */
+	async prepareReference(uri: vscode.Uri, vault: PiiVault): Promise<(text: string) => string> {
+		const identity = fileVaultIdentity(uri)
 		if (!identity || !this.store) return (text) => text
 		await this.cleanup()
 		const record = await this.store.load(identity)

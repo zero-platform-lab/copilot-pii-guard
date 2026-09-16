@@ -110,6 +110,11 @@ export type ParticipantDeps = {
 	fileToolMode?: () => FileToolMode
 	/** ファイル道具が扱うファイルのFile Vaultを今回のSession Vaultへ取り込む。 */
 	prepareFileVault?: (path: string, masker: TaskPiiMasker) => Promise<(text: string) => string>
+	/** 添付ファイルや選択範囲のFile Vaultを取り込み、衝突した伏せ字を置き換える。 */
+	prepareReferenceVault?: (
+		uri: vscode.Uri,
+		masker: TaskPiiMasker,
+	) => Promise<(text: string) => string>
 	/** ファイル道具が伏せ字のまま書いた対応をFile Vaultへ保存する。 */
 	recordFileVault?: (
 		path: string,
@@ -151,6 +156,7 @@ function isUri(value: unknown): value is vscode.Uri {
 export async function readReferences(
 	references: readonly vscode.ChatPromptReference[],
 	openTextDocument: (uri: vscode.Uri) => Thenable<vscode.TextDocument> = vscode.workspace.openTextDocument,
+	prepareVault?: (uri: vscode.Uri) => Promise<(text: string) => string>,
 ): Promise<{ texts: ReferenceText[]; failures: string[] }> {
 	const texts: ReferenceText[] = []
 	const failures: string[] = []
@@ -171,7 +177,8 @@ export async function readReferences(
 
 		try {
 			const document = await openTextDocument(uri)
-			texts.push({ label: uri.path, text: document.getText(location?.range) })
+			const remap = prepareVault ? await prepareVault(uri) : (text: string) => text
+			texts.push({ label: uri.path, text: remap(document.getText(location?.range)) })
 		} catch {
 			failures.push(uri.path)
 		}
@@ -207,13 +214,14 @@ function responseText(turn: vscode.ChatResponseTurn): string {
 async function historyMessages(
 	history: vscode.ChatContext["history"],
 	openTextDocument: (uri: vscode.Uri) => Thenable<vscode.TextDocument>,
+	prepareVault?: (uri: vscode.Uri) => Promise<(text: string) => string>,
 ): Promise<{ messages: AgentMessage[]; failures: string[] }> {
 	const messages: AgentMessage[] = []
 	const failures: string[] = []
 
 	for (const turn of history) {
 		if ("prompt" in turn) {
-			const references = await readReferences(turn.references ?? [], openTextDocument)
+			const references = await readReferences(turn.references ?? [], openTextDocument, prepareVault)
 			messages.push({
 				type: "message",
 				role: "user",
@@ -351,14 +359,26 @@ export function createHandler(deps: ParticipantDeps): vscode.ChatRequestHandler 
 	return async (request, context, stream, token) => {
 		const masker = deps.masker()
 		const enabled = deps.isEnabled()
+		const referenceVaults = new Map<string, Promise<(text: string) => string>>()
+		const prepareReferenceVault = enabled && deps.prepareReferenceVault
+			? (uri: vscode.Uri) => {
+					const key = `${uri.scheme}\0${uri.authority}\0${uri.path}\0${uri.query}`
+					let prepared = referenceVaults.get(key)
+					if (!prepared) {
+						prepared = deps.prepareReferenceVault!(uri, masker)
+						referenceVaults.set(key, prepared)
+					}
+					return prepared
+				}
+			: undefined
 		const restoreWrites = deps.restoreFileWrites?.() === true
 		const configuredFileToolMode = deps.fileToolMode?.() ?? "confirmEdit"
 		const effectiveFileToolMode: FileToolMode = enabled ? configuredFileToolMode : "off"
 		const availableTools = fileToolsForMode(tools, effectiveFileToolMode)
 		const availableToolNames = new Set(availableTools.map((tool) => tool.name))
 		let fileAccessDecision: "approved" | "denied" | undefined
-		const history = await historyMessages(context.history ?? [], openTextDocument)
-		const references = await readReferences(request.references ?? [], openTextDocument)
+		const history = await historyMessages(context.history ?? [], openTextDocument, prepareReferenceVault)
+		const references = await readReferences(request.references ?? [], openTextDocument, prepareReferenceVault)
 		const messages: AgentMessage[] = [
 			...history.messages,
 			{

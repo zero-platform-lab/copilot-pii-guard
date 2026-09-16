@@ -40,6 +40,7 @@ export function activate(context: vscode.ExtensionContext): void {
 			restoreFileWrites: () => readSettings().fileWrites?.restore === true,
 			fileToolMode: () => readSettings().fileTools?.mode ?? "confirmEdit",
 			prepareFileVault: (path, masker) => fileVault.prepareToolPath(path, masker.allocator),
+			prepareReferenceVault: (uri, masker) => fileVault.prepareReference(uri, masker.allocator),
 			recordFileVault: (path, entries) => fileVault.recordToolPath(path, entries),
 		}),
 	)
