@@ -6,6 +6,11 @@
 const MESSAGES: Record<string, string> = {
 	"common:pii.noEditor": "開いているファイルがありません。",
 	"common:pii.noVault": "戻せる伏せ字がありません。",
+	"common:pii.sessionVault": "Session Vault全体",
+	"common:pii.confirmClearVault":
+		"{{scope}}の対応 {{count}} 件を消去します。消去後、この対応を使った伏せ字は元の値へ戻せません。",
+	"common:pii.clearVault": "消去する",
+	"common:pii.vaultCleared": "Session Vaultから {{count}} 件を消去しました。",
 	"common:pii.nothingToRestore": "このファイルに伏せ字はありません。",
 	"common:pii.nothingFound": "伏せる個人情報は見つかりませんでした。",
 	"common:pii.found": "{{summary}} が見つかりました。ファイルは変更していません。",

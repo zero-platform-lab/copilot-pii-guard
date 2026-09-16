@@ -3,7 +3,7 @@
 // 会話の全体を伏せる層。
 //
 // 固定するのは 3 点。
-//   1. **同じ値へ同じ伏せ字**が当たること。item ごとに振り直すと、モデルは別人だと読む
+//   1. **同じ値へ同じ伏せ字**が当たること。item ごとに振り直すと、モデルは別の値だと読む
 //   2. **元の item を壊さない**こと。送る写しだけを変える
 //   3. 暗号化された reasoning に触らないこと
 
@@ -26,7 +26,7 @@ describe("maskConversation", () => {
 
 		expect(result.messages[0]).toMatchObject({ content: "{{email-001}} へ送って" })
 		expect(result.messages[2]).toMatchObject({ output: "連絡先: {{email-001}}" })
-		// 同じ値なので同じ伏せ字になる。別の番号だとモデルは別人だと読む。
+		// 同じ値なので同じ伏せ字になる。別の番号だとモデルは別の値だと読む。
 		expect(result.counts).toEqual({ email: 2 })
 	})
 
@@ -150,7 +150,7 @@ describe("PiiVault", () => {
 		// 1 回目は alice が先に出るので 001 になる。
 		maskConversation("", [message("user", "alice@x.example と bob@y.example")], { kinds: ["email"] }, vault)
 		// 2 回目は bob だけが出る。番号を振り直すと bob が 001 になり、前の応答で
-		// alice を指していた {{email-001}} が別人を指す。戻すと別人の値が書かれる。
+		// alice を指していた {{email-001}} が別の値を指す。戻すと誤った値が書かれる。
 		const second = maskConversation("", [message("user", "bob@y.example のみ")], { kinds: ["email"] }, vault)
 
 		expect(second.messages[0]).toMatchObject({ content: "{{email-002}} のみ" })
@@ -245,6 +245,39 @@ describe("PiiVault", () => {
 		maskConversation("", [message("user", "taro@corp.example")], { kinds: ["email"] }, vault)
 
 		expect([...vault.entries.values()]).toEqual(["taro@corp.example"])
+	})
+
+	it("確認前に確定した消去対象だけを消す", () => {
+		const vault = new PiiVault()
+		maskConversation("", [message("user", "alice@x.example と bob@y.example")], { kinds: ["email"] }, vault)
+
+		expect(vault.clearSnapshot(["{{email-001}}"])).toBe(1)
+		expect(vault.restore("{{email-001}} / {{email-002}}")).toBe("{{email-001}} / bob@y.example")
+		expect(vault.size).toBe(1)
+	})
+
+	it("消去した番号を別の値へ再利用しない", () => {
+		const vault = new PiiVault()
+		maskConversation("", [message("user", "alice@x.example")], { kinds: ["email"] }, vault)
+		vault.clearSnapshot(["{{email-001}}"])
+
+		const next = maskConversation("", [message("user", "bob@y.example")], { kinds: ["email"] }, vault)
+
+		expect(next.messages[0]).toMatchObject({ content: "{{email-002}}" })
+		expect(vault.restore("{{email-001}}")).toBe("{{email-001}}")
+	})
+
+	it("消去後は古い覚え書きを捨てて伏せ直す", () => {
+		const vault = new PiiVault()
+		const memo: MaskMemo = new Map()
+		const messages = [message("user", "taro@corp.example")]
+		maskConversation("", messages, { kinds: ["email"] }, vault, memo)
+		vault.clearSnapshot(["{{email-001}}"])
+
+		const next = maskConversation("", messages, { kinds: ["email"] }, vault, memo)
+
+		expect(next.messages[0]).toMatchObject({ content: "{{email-002}}" })
+		expect(vault.restore("{{email-002}}")).toBe("taro@corp.example")
 	})
 })
 
