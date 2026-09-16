@@ -333,15 +333,22 @@ export class FileVaultController {
 		)
 	}
 
-	async record(uri: vscode.Uri, entries: readonly FileVaultEntry[]): Promise<void> {
+	async record(uri: vscode.Uri, entries: readonly FileVaultEntry[]): Promise<boolean> {
 		const identity = fileVaultIdentity(uri)
-		if (!identity || !this.store) return
+		if (!identity || !this.store) return true
 		try {
 			await this.cleanup()
 			await this.store.appendIfEnabled(identity, entries)
+			return true
 		} catch (error) {
 			await vscode.window.showErrorMessage(errorMessage(error))
+			return false
 		}
+	}
+
+	async recordToolPath(path: string, entries: readonly FileVaultEntry[]): Promise<boolean> {
+		const uri = uriForToolPath(path)
+		return uri ? this.record(uri, entries) : true
 	}
 
 	/** 伏せ字を新しく割り当てる前に、保存済み番号をSession Vaultへ予約する。 */

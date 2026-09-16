@@ -110,6 +110,11 @@ export type ParticipantDeps = {
 	fileToolMode?: () => FileToolMode
 	/** ファイル道具が扱うファイルのFile Vaultを今回のSession Vaultへ取り込む。 */
 	prepareFileVault?: (path: string, masker: TaskPiiMasker) => Promise<(text: string) => string>
+	/** ファイル道具が伏せ字のまま書いた対応をFile Vaultへ保存する。 */
+	recordFileVault?: (
+		path: string,
+		entries: readonly (readonly [string, string])[],
+	) => Promise<boolean>
 	/** 使うモデルを選ぶ。既定は Copilot のもの。 */
 	selectModel?: () => Promise<vscode.LanguageModelChat | undefined>
 	/** 参照した文書を読む。試験では、実ファイルを開かずに差し替える。 */
@@ -340,6 +345,7 @@ export function createHandler(deps: ParticipantDeps): vscode.ChatRequestHandler 
 				prepareFile: deps.prepareFileVault
 					? (path) => deps.prepareFileVault!(path, masker)
 					: undefined,
+				recordFile: deps.recordFileVault,
 			}))
 
 	return async (request, context, stream, token) => {

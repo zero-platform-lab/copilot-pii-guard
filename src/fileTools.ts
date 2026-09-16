@@ -122,6 +122,8 @@ export async function runFileTool(
 		host?: FileToolHost
 		/** File VaultをSession Vaultへ取り込み、保存済み伏せ字を今回の番号へ直す。 */
 		prepareFile?: (path: string) => Promise<(text: string) => string>
+		/** 伏せ字のまま書いた対応を、対象ファイルのFile Vaultへ保存する。 */
+		recordFile?: (path: string, entries: readonly (readonly [string, string])[]) => Promise<boolean>
 	},
 ): Promise<string> {
 	// 呼び出し側の提示制御だけに頼らない。モデルが名前を直接返しても、生の結果を扱わない。
@@ -170,6 +172,12 @@ export async function runFileTool(
 		result = writeResult?.saved
 			? `${path} を${contentMode}ディスクへ保存しました。`
 			: `${path} へ${contentMode}変更を適用しました。未保存の場合はVS Codeで保存してください。`
+		if (!options.restoreWrites && options.recordFile) {
+			const entries = [...masker.allocator.entries].filter(([placeholder]) => written.includes(placeholder))
+			if (entries.length > 0 && !(await options.recordFile(path, entries))) {
+				result += " File Vaultを更新できなかったため、この伏せ字はセッション終了後に復元できません。"
+			}
+		}
 	} else {
 		throw new Error(`利用できない道具です: ${name}`)
 	}

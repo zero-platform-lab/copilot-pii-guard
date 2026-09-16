@@ -40,6 +40,7 @@ export function activate(context: vscode.ExtensionContext): void {
 			restoreFileWrites: () => readSettings().fileWrites?.restore === true,
 			fileToolMode: () => readSettings().fileTools?.mode ?? "confirmEdit",
 			prepareFileVault: (path, masker) => fileVault.prepareToolPath(path, masker.allocator),
+			recordFileVault: (path, entries) => fileVault.recordToolPath(path, entries),
 		}),
 	)
 	participant.iconPath = new vscode.ThemeIcon("shield")
@@ -57,7 +58,9 @@ export function activate(context: vscode.ExtensionContext): void {
 				readSettings(),
 				vault,
 				(texts) => piiMasker().properNounsFor(texts),
-				(uri, entries) => fileVault.record(uri, entries),
+				async (uri, entries) => {
+					await fileVault.record(uri, entries)
+				},
 			)
 		}),
 		vscode.commands.registerCommand("piiGuard.restoreFile", () =>

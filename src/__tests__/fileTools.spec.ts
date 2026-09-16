@@ -92,6 +92,36 @@ describe("PII Guardのファイル道具", () => {
 		expect(result).toContain("保存してください")
 	})
 
+	it("伏せ字のまま書いた対応を対象ファイルのFile Vaultへ渡す", async () => {
+		const masker = new TaskPiiMasker({ enabled: true } as never)
+		const recordFile = vi.fn(async () => true)
+
+		await runFileTool(
+			"pii_guard_write_file",
+			{ path: "answer.txt", content: "連絡先は taro@corp.example" },
+			masker,
+			{ restoreWrites: false, token, recordFile, host: fakeHost() },
+		)
+
+		expect(recordFile).toHaveBeenCalledExactlyOnceWith("answer.txt", [
+			["{{email-001}}", "taro@corp.example"],
+		])
+	})
+
+	it("書込成功後にFile Vaultだけ失敗した場合は復元不能になることを返す", async () => {
+		const masker = new TaskPiiMasker({ enabled: true } as never)
+
+		const result = await runFileTool(
+			"pii_guard_write_file",
+			{ path: "answer.txt", content: "連絡先は taro@corp.example" },
+			masker,
+			{ restoreWrites: false, token, recordFile: async () => false, host: fakeHost() },
+		)
+
+		expect(result).toContain("変更を適用しました")
+		expect(result).toContain("セッション終了後に復元できません")
+	})
+
 	it("Write Restoreモードでは書く直前だけ元の値へ戻す", async () => {
 		const written: string[] = []
 		const confirmations: boolean[] = []
@@ -117,6 +147,20 @@ describe("PII Guardのファイル道具", () => {
 		expect(result).toBe(
 			"answer.txt へ元の値を復元して変更を適用しました。未保存の場合はVS Codeで保存してください。",
 		)
+	})
+
+	it("元の値を書いた場合はFile Vaultへ不要な対応を追加しない", async () => {
+		const masker = new TaskPiiMasker({ enabled: true } as never)
+		const recordFile = vi.fn(async () => true)
+
+		await runFileTool(
+			"pii_guard_write_file",
+			{ path: "answer.txt", content: "連絡先は taro@corp.example" },
+			masker,
+			{ restoreWrites: true, token, recordFile, host: fakeHost() },
+		)
+
+		expect(recordFile).not.toHaveBeenCalled()
 	})
 
 	it("書込前にもFile Vaultを取り込み、衝突した伏せ字を正しく復元する", async () => {
