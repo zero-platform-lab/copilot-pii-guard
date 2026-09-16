@@ -8,6 +8,9 @@ const mocks = vi.hoisted(() => {
 		secrets,
 		activeTextEditor: undefined as unknown,
 		workspaceFolder: undefined as unknown,
+		workspaceFolders: [] as { index: number; uri: { path: string } }[],
+		renameListener: undefined as unknown,
+		deleteListener: undefined as unknown,
 		showInformationMessage: vi.fn(async (..._args: unknown[]) => undefined as unknown),
 		showWarningMessage: vi.fn(async (..._args: unknown[]) => undefined as unknown),
 		showErrorMessage: vi.fn(async (..._args: unknown[]) => undefined as unknown),
@@ -24,9 +27,27 @@ vi.mock("vscode", () => ({
 		showErrorMessage: mocks.showErrorMessage,
 	},
 	workspace: {
+		getConfiguration: () => ({ get: (_key: string, fallback: unknown) => fallback }),
 		getWorkspaceFolder: () => mocks.workspaceFolder,
+		get workspaceFolders() {
+			return mocks.workspaceFolders
+		},
+		onDidRenameFiles(listener: unknown) {
+			mocks.renameListener = listener
+			return { dispose() {} }
+		},
+		onDidDeleteFiles(listener: unknown) {
+			mocks.deleteListener = listener
+			return { dispose() {} }
+		},
 		asRelativePath: (uri: { path: string }) => uri.path.replace(/^\/w\//, ""),
 		fs: {
+			async stat(uri: { path: string }) {
+				if (uri.path.startsWith("/w/")) return { type: 1 }
+				const error = new Error(uri.path)
+				error.name = "FileNotFound"
+				throw error
+			},
 			async readFile(uri: { path: string }) {
 				const value = mocks.files.get(uri.path)
 				if (value) return value
@@ -79,6 +100,9 @@ beforeEach(() => {
 	mocks.files.clear()
 	mocks.secrets.clear()
 	mocks.workspaceFolder = { index: 0, uri: uri("/w") }
+	mocks.workspaceFolders = [mocks.workspaceFolder as never]
+	mocks.renameListener = undefined
+	mocks.deleteListener = undefined
 	mocks.activeTextEditor = {
 		document: { uri: uri("/w/note.md"), getText: () => "連絡先は {{email-005}}" },
 	}
@@ -139,5 +163,30 @@ describe("FileVaultController", () => {
 
 		expect(await controller.prepare(uri("/w/note.md"), new PiiVault())).toBe(false)
 		expect(mocks.showErrorMessage).toHaveBeenLastCalledWith("common:pii.fileVault.corrupt")
+	})
+
+	it("VS Codeの名前変更と削除通知へ追従する", async () => {
+		const vault = new PiiVault()
+		vault.importEntries([["{{email-005}}", "alice@corp.example"]])
+		mocks.showWarningMessage.mockResolvedValueOnce("common:pii.fileVault.enable")
+		const controller = new FileVaultController(context())
+		await controller.enable(vault)
+		controller.start()
+
+		await (mocks.renameListener as (event: unknown) => Promise<void>)({
+			files: [{ oldUri: uri("/w/note.md"), newUri: uri("/w/moved.md") }],
+		})
+		await vi.waitFor(async () => {
+			expect(await controller.restore(uri("/w/moved.md"), "{{email-005}}", (text) => text)).toBe(
+				"alice@corp.example",
+			)
+		})
+
+		await (mocks.deleteListener as (event: unknown) => Promise<void>)({ files: [uri("/w/moved.md")] })
+		await vi.waitFor(async () => {
+			expect(await controller.restore(uri("/w/moved.md"), "{{email-005}}", (text) => text)).toBe(
+				"{{email-005}}",
+			)
+		})
 	})
 })

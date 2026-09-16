@@ -125,4 +125,69 @@ describe("FileVaultStore", () => {
 		expect(await store.inspect("0:b.md")).toBeDefined()
 		expect(await store.appendIfEnabled("0:a.md", [["{{email-003}}", "new@corp.example"]])).toBe(false)
 	})
+
+	it("ディレクトリ移動では配下だけを新しい関連付けへ移す", async () => {
+		const memory = memoryFileSystem()
+		const secret = secretStorage()
+		const store = new FileVaultStore(root(), secret.secrets, memory.fs as never)
+		await store.enable("0:old/a.md", [["{{email-001}}", "alice@corp.example"]])
+		await store.enable("0:old/nested/b.md", [["{{email-002}}", "bob@corp.example"]])
+		await store.enable("0:other.md", [["{{email-003}}", "carol@corp.example"]])
+
+		expect(await store.movePath("0:old", "0:new")).toBe(2)
+		expect(await store.inspect("0:old/a.md")).toBeUndefined()
+		expect(await store.inspect("0:new/a.md")).toBeDefined()
+		expect(await store.inspect("0:new/nested/b.md")).toBeDefined()
+		expect(await store.inspect("0:other.md")).toBeDefined()
+	})
+
+	it("ディレクトリ削除では配下だけを消去する", async () => {
+		const memory = memoryFileSystem()
+		const secret = secretStorage()
+		const store = new FileVaultStore(root(), secret.secrets, memory.fs as never)
+		await store.enable("0:old/a.md", [["{{email-001}}", "alice@corp.example"]])
+		await store.enable("0:old/b.md", [["{{email-002}}", "bob@corp.example"]])
+		await store.enable("0:other.md", [["{{email-003}}", "carol@corp.example"]])
+
+		expect(await store.deletePath("0:old")).toEqual({ files: 2, entries: 2 })
+		expect(await store.inspect("0:old/a.md")).toBeUndefined()
+		expect(await store.inspect("0:other.md")).toBeDefined()
+	})
+
+	it("最終利用から保持日数が経過した対応だけを消去する", async () => {
+		const memory = memoryFileSystem()
+		const secret = secretStorage()
+		let current = new Date("2026-01-01T00:00:00.000Z")
+		const store = new FileVaultStore(root(), secret.secrets, memory.fs as never, () => current)
+		await store.enable("0:expired.md")
+		current = new Date("2026-01-20T00:00:00.000Z")
+		await store.enable("0:current.md")
+		current = new Date("2026-02-01T00:00:00.000Z")
+
+		expect(await store.prune(30, async () => true)).toEqual({ expired: 1, missing: 0 })
+		expect(await store.inspect("0:expired.md")).toBeUndefined()
+		expect(await store.inspect("0:current.md")).toBeDefined()
+	})
+
+	it("0日では期限削除せず、消失確認済みだけを消去する", async () => {
+		const memory = memoryFileSystem()
+		const secret = secretStorage()
+		let current = new Date("2020-01-01T00:00:00.000Z")
+		const store = new FileVaultStore(root(), secret.secrets, memory.fs as never, () => current)
+		await store.enable("0:exists.md")
+		await store.enable("0:missing.md")
+		await store.enable("0:unknown.md")
+		current = new Date("2030-01-01T00:00:00.000Z")
+
+		const result = await store.prune(0, async (identity) => {
+			if (identity === "0:missing.md") return false
+			if (identity === "0:unknown.md") return undefined
+			return true
+		})
+
+		expect(result).toEqual({ expired: 0, missing: 1 })
+		expect(await store.inspect("0:exists.md")).toBeDefined()
+		expect(await store.inspect("0:missing.md")).toBeUndefined()
+		expect(await store.inspect("0:unknown.md")).toBeDefined()
+	})
 })

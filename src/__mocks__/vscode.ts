@@ -18,10 +18,14 @@ export const window = {
 export const workspace = {
 	getConfiguration: vi.fn(() => ({ get: () => undefined })),
 	getWorkspaceFolder: vi.fn(),
+	workspaceFolders: undefined as unknown,
+	onDidRenameFiles: vi.fn(() => ({ dispose: vi.fn() })),
+	onDidDeleteFiles: vi.fn(() => ({ dispose: vi.fn() })),
 	asRelativePath: vi.fn((uri: { path?: string; fsPath?: string }) => uri.path ?? uri.fsPath ?? ""),
 	openTextDocument: vi.fn(),
 	applyEdit: vi.fn(async () => true),
 	fs: {
+		stat: vi.fn(),
 		writeFile: vi.fn(async () => undefined),
 		readFile: vi.fn(async () => new Uint8Array()),
 		createDirectory: vi.fn(async () => undefined),

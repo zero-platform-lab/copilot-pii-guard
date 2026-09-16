@@ -134,7 +134,9 @@ Session Vaultは、元の値と伏せ字の対応を拡張機能ホストのメ�
 
 File Vaultはファイルごとの明示的なオプトインです。対応表は認証付き暗号で暗号化して
 ワークスペース固有の拡張機能専用領域へ保存し、暗号鍵はVS CodeのSecretStorageへ分離します。
-ファイル本文、リポジトリ、Settings Syncには保存しません。
+ファイル本文、リポジトリ、Settings Syncには保存しません。既定では最終利用から30日後に
+消去します。VS Codeから行った名前変更・移動には追従し、起動時と利用前には対象ファイルが
+残っていることを確認します。
 
 ## 設定
 
@@ -146,6 +148,7 @@ VS Code の設定で `piiGuard` を検索する。
 | `piiGuard.restore` | オン | Copilotの応答にある伏せ字を、画面へ出すとき元の値へ戻すか |
 | `piiGuard.fileWrites.restore` | オフ | Write Restoreモード。ファイル道具が書く直前に元の値へ戻すか |
 | `piiGuard.fileTools.mode` | `confirmEdit` | ファイル道具を使わない、読取専用、確認付き編集のどれにするか |
+| `piiGuard.fileVault.retentionDays` | `30` | File Vaultを最終利用から保持する日数。`0` は時間による期限なし |
 | `piiGuard.terms` | 空 | 必ず伏せたい語。登録した語は完全一致で検出します |
 | `piiGuard.dictionaryPaths` | 空 | 辞書ファイルの場所。空なら `~/.agent/pii-dictionary.txt` |
 | `piiGuard.properNouns.enabled` | オフ | 固有名詞検出を使うか |
