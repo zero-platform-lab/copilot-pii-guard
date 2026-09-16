@@ -1,5 +1,7 @@
 // npx vitest run src/__tests__/fileTools.spec.ts
 
+import * as vscode from "vscode"
+
 import { FILE_TOOLS, FILE_TOOL_ACCESS, runFileTool, writeRevisionMatches, type FileToolHost } from "../fileTools"
 import { TaskPiiMasker } from "../pii/TaskPiiMasker"
 import { resetSessionVault } from "../pii/maskConversation"
@@ -21,6 +23,79 @@ function fakeHost(overrides: Partial<FileToolHost> = {}): FileToolHost {
 }
 
 beforeEach(() => resetSessionVault())
+
+/** 偽物の作業場所を差し替える。実物では読み取り専用なので、型を外して書き換える。 */
+const setFolders = (value: unknown) => {
+	(vscode.workspace as { workspaceFolders: unknown }).workspaceFolders = value
+}
+
+describe("道筋の検査（作業場所の外を触らせない）", () => {
+	// **モデルが指す道筋をそのまま受ける場所である。** ここが緩いと、作業場所の外の
+	// ファイルを読ませたり書かせたりできる。**画面には何も出ない。**
+	const folders = (...names: string[]) => {
+		setFolders(
+			names.map((name, index) => ({ index, name, uri: { path: `/${name}`, fsPath: `/${name}` } })),
+		)
+	}
+
+	const read = (path: string) =>
+		runFileTool("pii_guard_read_file", { path }, new TaskPiiMasker({ enabled: true } as never), {
+			restoreWrites: false,
+			token,
+			// **本物の実装を使う。** 偽物を渡すと、検査そのものを飛ばしてしまう。
+		})
+
+	afterEach(() => setFolders(undefined))
+
+	it("作業場所が開かれていなければ、何もしない", async () => {
+		setFolders(undefined)
+
+		await expect(read("note.md")).rejects.toThrow("作業場所が開かれていません")
+	})
+
+	it.each([
+		["絶対パス", "/etc/passwd"],
+		["Windows のドライブ", "C:/Windows/system.ini"],
+		["区切り文字だけ", "\\"],
+	])("%s は断る", async (_name, path) => {
+		folders("w")
+
+		await expect(read(path)).rejects.toThrow("相対パス")
+	})
+
+	it("空の道筋は、道具の入り口で断る", async () => {
+		// 検査へ届く前に、引数の形として弾かれる。どちらで弾いても構わないが、
+		// **どこかで必ず弾く**ことを固定しておく。
+		folders("w")
+
+		await expect(read("   ")).rejects.toThrow("空でない文字列")
+	})
+
+	it.each([
+		["遡る", "../外.md"],
+		["途中で遡る", "a/../../外.md"],
+		["現在位置", "./note.md"],
+		["空の区切り", "a//b.md"],
+	])("%s 道筋は断る", async (_name, path) => {
+		folders("w")
+
+		await expect(read(path)).rejects.toThrow("`.`、`..`、空の区切り")
+	})
+
+	it("作業場所が 2 つ以上なら、先頭に名前を求める", async () => {
+		// 求めないと、どちらの作業場所のファイルか決められない。黙って片方を選ぶと、
+		// 別の作業場所のファイルを読むことになる。
+		folders("w", "x")
+
+		await expect(read("note.md")).rejects.toThrow("作業場所名")
+	})
+
+	it("作業場所名だけでは、ファイルを指したことにならない", async () => {
+		folders("w", "x")
+
+		await expect(read("w")).rejects.toThrow("ファイルの相対パス")
+	})
+})
 
 describe("PII Guardのファイル道具", () => {
 	it("提示する道具と権限グループの定義が一致する", () => {
