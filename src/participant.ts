@@ -108,6 +108,8 @@ export type ParticipantDeps = {
 	restoreFileWrites?: () => boolean
 	/** ファイル道具の権限。未指定は現行互換の confirmEdit。 */
 	fileToolMode?: () => FileToolMode
+	/** ファイル道具が扱うファイルのFile Vaultを今回のSession Vaultへ取り込む。 */
+	prepareFileVault?: (path: string, masker: TaskPiiMasker) => Promise<(text: string) => string>
 	/** 使うモデルを選ぶ。既定は Copilot のもの。 */
 	selectModel?: () => Promise<vscode.LanguageModelChat | undefined>
 	/** 参照した文書を読む。試験では、実ファイルを開かずに差し替える。 */
@@ -332,7 +334,13 @@ export function createHandler(deps: ParticipantDeps): vscode.ChatRequestHandler 
 	const executeTool =
 		deps.runTool ??
 		((name, input, masker, restoreWrites, token) =>
-			runFileTool(name, input, masker, { restoreWrites, token }))
+			runFileTool(name, input, masker, {
+				restoreWrites,
+				token,
+				prepareFile: deps.prepareFileVault
+					? (path) => deps.prepareFileVault!(path, masker)
+					: undefined,
+			}))
 
 	return async (request, context, stream, token) => {
 		const masker = deps.masker()

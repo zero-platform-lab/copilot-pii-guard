@@ -3,6 +3,7 @@
 import { FILE_TOOLS, FILE_TOOL_ACCESS, runFileTool, type FileToolHost } from "../fileTools"
 import { TaskPiiMasker } from "../pii/TaskPiiMasker"
 import { resetSessionVault } from "../pii/maskConversation"
+import { unmaskText } from "../pii/maskText"
 
 vi.mock("../paths", () => ({ getGlobalAgentDirectory: () => "/w/存在しない" }))
 
@@ -54,6 +55,26 @@ describe("PII Guardのファイル道具", () => {
 		expect(result).not.toContain("taro@corp.example")
 	})
 
+	it("File Vaultの伏せ字衝突を今回のSession Vault番号へ直して返す", async () => {
+		const masker = new TaskPiiMasker({ enabled: true } as never)
+		await masker.maskPrompt("bob@corp.example") // 今回の {{email-001}}
+		const prepareFile = vi.fn(async () => {
+			const remapped = masker.allocator.importEntries([["{{email-001}}", "alice@corp.example"]])
+			return (text: string) => unmaskText(text, remapped)
+		})
+
+		const result = await runFileTool("pii_guard_read_file", { path: "customer.txt" }, masker, {
+			restoreWrites: false,
+			token,
+			prepareFile,
+			host: fakeHost({ readFile: async () => "連絡先は {{email-001}}" }),
+		})
+
+		expect(prepareFile).toHaveBeenCalledExactlyOnceWith("customer.txt")
+		expect(result).toBe("連絡先は {{email-002}}")
+		expect(masker.restoreExplicitly(result)).toBe("連絡先は alice@corp.example")
+	})
+
 	it("通常モードでは書く本文を伏せ字のままにする", async () => {
 		const written: string[] = []
 		const masker = new TaskPiiMasker({ enabled: true } as never)
@@ -96,6 +117,30 @@ describe("PII Guardのファイル道具", () => {
 		expect(result).toBe(
 			"answer.txt へ元の値を復元して変更を適用しました。未保存の場合はVS Codeで保存してください。",
 		)
+	})
+
+	it("書込前にもFile Vaultを取り込み、衝突した伏せ字を正しく復元する", async () => {
+		const written: string[] = []
+		const masker = new TaskPiiMasker({ enabled: true } as never)
+		await masker.maskPrompt("bob@corp.example")
+		const prepareFile = async () => {
+			const remapped = masker.allocator.importEntries([["{{email-001}}", "alice@corp.example"]])
+			return (text: string) => unmaskText(text, remapped)
+		}
+
+		await runFileTool(
+			"pii_guard_write_file",
+			{ path: "customer.txt", content: "連絡先は {{email-001}}" },
+			masker,
+			{
+				restoreWrites: true,
+				token,
+				prepareFile,
+				host: fakeHost({ writeFile: async (_path, content) => void written.push(content) }),
+			},
+		)
+
+		expect(written).toEqual(["連絡先は alice@corp.example"])
 	})
 
 	it("保存済みと確認できた場合だけディスクへ保存したと返す", async () => {

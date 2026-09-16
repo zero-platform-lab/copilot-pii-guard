@@ -120,6 +120,8 @@ export async function runFileTool(
 		restoreWrites: boolean
 		token: vscode.CancellationToken
 		host?: FileToolHost
+		/** File VaultをSession Vaultへ取り込み、保存済み伏せ字を今回の番号へ直す。 */
+		prepareFile?: (path: string) => Promise<(text: string) => string>
 	},
 ): Promise<string> {
 	// 呼び出し側の提示制御だけに頼らない。モデルが名前を直接返しても、生の結果を扱わない。
@@ -136,16 +138,29 @@ export async function runFileTool(
 		const query = masker.restoreExplicitly(stringInput(input, "query"))
 		const pattern = masker.restoreExplicitly(stringInput(input, "pattern", false) || DEFAULT_GLOB)
 		const matches = await host.searchFiles(query, pattern, resultLimit(input), options.token)
-		result = matches.length
-			? matches.map((match) => `${match.path}:${match.line}: ${match.text}`).join("\n")
-			: "一致する箇所はありません。"
+		const prepared = new Map<string, (text: string) => string>()
+		const lines: string[] = []
+		for (const match of matches) {
+			let remap = prepared.get(match.path)
+			if (!remap) {
+				remap = (await options.prepareFile?.(match.path)) ?? ((text) => text)
+				prepared.set(match.path, remap)
+			}
+			lines.push(`${match.path}:${match.line}: ${remap(match.text)}`)
+		}
+		result = lines.length ? lines.join("\n") : "一致する箇所はありません。"
 	} else if (name === "pii_guard_read_file") {
 		const path = masker.restoreExplicitly(stringInput(input, "path"))
-		result = await host.readFile(path)
+		const content = await host.readFile(path)
+		const remap = await options.prepareFile?.(path)
+		result = remap ? remap(content) : content
 	} else if (name === "pii_guard_write_file") {
 		const path = masker.restoreExplicitly(stringInput(input, "path"))
-		const content = (input as Record<string, unknown>).content
-		if (typeof content !== "string") throw new Error("content は文字列で指定してください。")
+		const rawContent = (input as Record<string, unknown>).content
+		if (typeof rawContent !== "string") throw new Error("content は文字列で指定してください。")
+		let content = rawContent
+		const remap = await options.prepareFile?.(path)
+		if (remap) content = remap(content)
 		const safeContent = (await masker.maskPrompt(content)).text
 		const written = options.restoreWrites ? masker.restoreExplicitly(safeContent) : safeContent
 

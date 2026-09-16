@@ -39,6 +39,7 @@ export function activate(context: vscode.ExtensionContext): void {
 			isEnabled: () => readSettings().enabled !== false,
 			restoreFileWrites: () => readSettings().fileWrites?.restore === true,
 			fileToolMode: () => readSettings().fileTools?.mode ?? "confirmEdit",
+			prepareFileVault: (path, masker) => fileVault.prepareToolPath(path, masker.allocator),
 		}),
 	)
 	participant.iconPath = new vscode.ThemeIcon("shield")

@@ -122,6 +122,21 @@ describe("fileVaultIdentity", () => {
 })
 
 describe("FileVaultController", () => {
+	it("ファイル道具の相対パスから読み、衝突した番号を直す", async () => {
+		const stored = new PiiVault()
+		stored.importEntries([["{{email-005}}", "alice@corp.example"]])
+		mocks.showWarningMessage.mockResolvedValueOnce("common:pii.fileVault.enable")
+		const controller = new FileVaultController(context())
+		await controller.enable(stored)
+
+		const session = new PiiVault()
+		session.importEntries([["{{email-005}}", "bob@corp.example"]])
+		const remap = await controller.prepareToolPath("note.md", session)
+
+		expect(remap("連絡先は {{email-005}}")).toBe("連絡先は {{email-006}}")
+		expect(session.restore("{{email-006}}")).toBe("alice@corp.example")
+	})
+
 	it("有効化した対応を次のセッションへ取り込み、復元する", async () => {
 		const first = new PiiVault()
 		first.importEntries([["{{email-005}}", "alice@corp.example"]])
