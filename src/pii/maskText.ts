@@ -34,7 +34,7 @@ import { PII_KINDS, type PiiKind, type PiiMatch, type PiiTerm } from "./types"
  * 元へ戻る。
  *
  * **同じ値には同じ伏せ字を割り当てる**（`FR-PII-02`）。別の番号を割り当てると、モデルは
- * 別人だと読む。**書き方が違えば別の番号にする。** `ACME` と `acme` を 1 つにまとめると、
+ * 別の値だと読む。**書き方が違えば別の番号にする。** `ACME` と `acme` を 1 つにまとめると、
  * 戻すときにどちらの書き方だったか分からない。復元の確かさを優先する。
  *
  * **戻すのは、その回に割り当てた伏せ字だけ**にする（`FR-PII-08a`）。元から
@@ -89,7 +89,7 @@ function placeholderFor(kind: PiiKind, index: number): string {
  *
  * **番号を持つのは呼び出し側にする。** `planMasking` が毎回 1 から振ると、要求ごとに
  * 同じ番号が別の値へ結び付く。前の応答で `{{email-001}}` と書いたモデルに、次の要求で
- * 別人を指す `{{email-001}}` を見せることになる。
+ * 別の値を指す `{{email-001}}` を見せることになる。
  */
 export type PlaceholderAllocator = {
 	/** 同じ種類と値には同じ伏せ字を返す。初めてなら新しい番号を振る。 */
@@ -98,10 +98,16 @@ export type PlaceholderAllocator = {
 	readonly table: ReadonlyMap<string, string>
 }
 
+type MutablePlaceholderAllocator = PlaceholderAllocator & {
+	/** 割り当てを捨てる。番号は再利用しない。 */
+	remove: (placeholder: string) => boolean
+}
+
 /** 1 回の置き換えだけで使う割り当て係。要求をまたがない用途に使う。 */
-export function createAllocator(): PlaceholderAllocator {
+export function createAllocator(): MutablePlaceholderAllocator {
 	const table = new Map<string, string>()
 	const assigned = new Map<string, string>()
+	const assignmentKeys = new Map<string, string>()
 	const next = new Map<PiiKind, number>()
 
 	return {
@@ -115,8 +121,17 @@ export function createAllocator(): PlaceholderAllocator {
 			next.set(kind, index)
 			const placeholder = placeholderFor(kind, index)
 			assigned.set(key, placeholder)
+			assignmentKeys.set(placeholder, key)
 			table.set(placeholder, value)
 			return placeholder
+		},
+		remove(placeholder) {
+			if (!table.delete(placeholder)) return false
+
+			const key = assignmentKeys.get(placeholder)
+			if (key !== undefined) assigned.delete(key)
+			assignmentKeys.delete(placeholder)
+			return true
 		},
 	}
 }

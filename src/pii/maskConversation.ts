@@ -27,7 +27,7 @@ import type { PiiKind } from "./types"
  * | `reasoning`            | 触らない            | 暗号化された不透明な値である           |
  *
  * **対応表はタスクの間ずっと持つ**（`FR-PII-02` `FR-PII-02b`）。同じ値へ毎回同じ伏せ字を
- * 割り当てないと、前の応答で使った伏せ字と食い違い、モデルは別人だと読む。ディスクへは
+ * 割り当てないと、前の応答で使った伏せ字と食い違い、モデルは別の値だと読む。ディスクへは
  * 書かない。
  *
  * **JSON を壊さない。** `function_call.arguments` は JSON の文字列だが、伏せ字は
@@ -49,6 +49,7 @@ export class PiiVault implements PlaceholderAllocator {
 	 * 別の伏せ字が割り当てられ、応答を戻せなくなる。
 	 */
 	private readonly allocator = createAllocator()
+	private currentRevision = 0
 
 	/** 伏せ字 → 元の値。割り当て係としてもこの表を差し出す。 */
 	get table(): ReadonlyMap<string, string> {
@@ -64,12 +65,17 @@ export class PiiVault implements PlaceholderAllocator {
 		return this.allocator.table.size
 	}
 
+	/** 対応表を変えた世代。伏せ字化の覚え書きを安全に破棄するために使う。 */
+	get revision(): number {
+		return this.currentRevision
+	}
+
 	/**
 	 * 同じ種類と値には同じ伏せ字を返す。
 	 *
 	 * **番号を持つのは対応表である。** 置き換えのたびに 1 から振ると、要求ごとに同じ
 	 * 番号が別の値へ結び付く。前の応答で `{{email-001}}` と書いたモデルに、次の要求で
-	 * 別人を指す `{{email-001}}` を見せることになり、戻すときに別人の値がファイルへ
+	 * 別の値を指す `{{email-001}}` を見せることになり、戻すときに誤った値がファイルへ
 	 * 書かれる。
 	 */
 	assign(kind: PiiKind, value: string): string {
@@ -80,6 +86,21 @@ export class PiiVault implements PlaceholderAllocator {
 	restore(text: string): string {
 		return unmaskText(text, this.allocator.table)
 	}
+
+	/**
+	 * 確認前に確定した対象を消す。確認中に増えた対応は消さない。
+	 *
+	 * 消した番号は再利用しない。再利用すると、消去前の文書に残る伏せ字が別の値へ
+	 * 復元されるためである。
+	 */
+	clearSnapshot(placeholders: Iterable<string>): number {
+		let cleared = 0
+		for (const placeholder of placeholders) {
+			if (this.allocator.remove(placeholder)) cleared++
+		}
+		if (cleared > 0) this.currentRevision++
+		return cleared
+	}
 }
 
 /**
@@ -87,7 +108,7 @@ export class PiiVault implements PlaceholderAllocator {
  *
  * **1 つしか持たない。** タスクごとに分けると、タスク A で `{{email-001}}` に割り当てた
  * 値と、タスク B の `{{email-001}}` が別物になる。A で伏せたファイルを B が読むと、
- * モデルは同じ伏せ字を見て別人の値を書き戻す。
+ * モデルは同じ伏せ字を見て誤った値を書き戻す。
  *
  * **会話をしていなくても使える。** 右クリックでファイルを伏せ、他の道具へ渡し、戻って
  * きてから元へ戻す、という使い方のためである。会話が動いていることを条件にすると、
@@ -132,6 +153,8 @@ export type MaskConversationResult = {
 export type MaskMemo = Map<string, { text: string; counts: Partial<Record<PiiKind, number>> }> & {
 	/** 覚えている文字数。上限を測るために持つ。 */
 	bytes?: number
+	/** この覚え書きを作ったVaultの世代。 */
+	vaultRevision?: number
 }
 
 /**
@@ -154,6 +177,14 @@ export function maskConversation(
 	// 伏せられないまま送られ、対応表には区切りを含む値が入る。
 	const allocator = vault ?? createAllocator()
 	const counts: Partial<Record<PiiKind, number>> = {}
+
+	// Vaultを消去したあとに古い伏せ字化結果を返すと、その伏せ字はもう復元できない。
+	// 世代が変わったときだけ覚え書きを捨て、次の番号で伏せ直す。
+	if (memo && vault && memo.vaultRevision !== vault.revision) {
+		memo.clear()
+		memo.bytes = 0
+		memo.vaultRevision = vault.revision
+	}
 
 	const add = (from: Partial<Record<PiiKind, number>>) => {
 		// 値を入れるのは `planMasking` だけで、未定義は入らない。分けて扱わない。

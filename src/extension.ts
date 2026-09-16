@@ -9,6 +9,7 @@ import { TaskPiiMasker } from "./pii/TaskPiiMasker"
 import { checkSecretsInActiveEditor, maskSecretsInActiveEditor, restoreSecretsInActiveEditor } from "./pii/maskEditor"
 import { addSelectionToDictionary, exportDictionary } from "./pii/dictionaryEditor"
 import { sessionVault } from "./pii/maskConversation"
+import { clearSessionVault } from "./pii/sessionVaultEditor"
 import { createHandler } from "./participant"
 import { readSettings } from "./settings"
 import { fetchModelCommand, showModelStatus } from "./model"
@@ -52,6 +53,7 @@ export function activate(context: vscode.ExtensionContext): void {
 		vscode.commands.registerCommand("piiGuard.restoreFile", () =>
 			restoreSecretsInActiveEditor((text) => sessionVault().restore(text)),
 		),
+		vscode.commands.registerCommand("piiGuard.clearSessionVault", clearSessionVault),
 		vscode.commands.registerCommand("piiGuard.addToDictionary", () =>
 			addSelectionToDictionary(readSettings()),
 		),

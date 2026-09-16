@@ -4,7 +4,7 @@
 //
 // 固定するのは 3 点。
 //   1. 既定では伏せないこと（FR-PII-01a）。気づかないうちに挙動が変わらない
-//   2. **要求をまたいで同じ値へ同じ伏せ字**が当たること。食い違うとモデルは別人だと読む
+//   2. **要求をまたいで同じ値へ同じ伏せ字**が当たること。食い違うとモデルは別の値だと読む
 //   3. 戻さない設定では素通しすること（FR-PII-19）
 
 import * as os from "os"
@@ -93,7 +93,7 @@ describe("TaskPiiMasker", () => {
 		await masker.maskForRequest("", [message("taro@corp.example")])
 		const second = await masker.maskForRequest("", [message("また taro@corp.example へ")])
 
-		// 前の応答で使った伏せ字と食い違うと、モデルは別人だと読む。
+		// 前の応答で使った伏せ字と食い違うと、モデルは別の値だと読む。
 		expect(second.messages[0]).toMatchObject({ content: "また {{email-001}} へ" })
 		expect(masker.maskedCount).toBe(1)
 	})
@@ -437,7 +437,7 @@ describe("覆っていなかった経路", () => {
 describe("対応表は本製品で 1 つを共有する（FR-PII-02b）", () => {
 	it("別の masker でも、同じ値には同じ伏せ字が当たる", async () => {
 		// **分けると壊れる。** タスク A の `{{email-001}}` とタスク B の `{{email-001}}` が
-		// 別物になり、A で伏せたファイルを B が読むと別人の値が書き戻される。
+		// 別物になり、A で伏せたファイルを B が読むと誤った値が書き戻される。
 		const first = new TaskPiiMasker({ enabled: true, kinds: ["email"] })
 		const second = new TaskPiiMasker({ enabled: true, kinds: ["email"] })
 

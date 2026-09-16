@@ -297,6 +297,11 @@
 				"category": "PII Guard"
 			},
 			{
+				"command": "piiGuard.clearSessionVault",
+				"title": "Session Vaultを消去する",
+				"category": "PII Guard"
+			},
+			{
 				"command": "piiGuard.addToDictionary",
 				"title": "選んだ語を辞書へ足す",
 				"category": "PII Guard"
