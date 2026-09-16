@@ -24,6 +24,8 @@ export const workspace = {
 	onDidDeleteFiles: vi.fn(() => ({ dispose: vi.fn() })),
 	asRelativePath: vi.fn((uri: { path?: string; fsPath?: string }) => uri.path ?? uri.fsPath ?? ""),
 	openTextDocument: vi.fn(),
+	registerTextDocumentContentProvider: vi.fn(() => ({ dispose: vi.fn() })),
+	findFiles: vi.fn(async () => []),
 	applyEdit: vi.fn(async () => true),
 	fs: {
 		stat: vi.fn(),
@@ -56,12 +58,19 @@ export class WorkspaceEdit {
 }
 export class Uri {
 	static file = (path: string) => ({ fsPath: path, path })
+	static from = (parts: { scheme: string; path: string; query?: string }) => ({
+		...parts,
+		fsPath: parts.path,
+		toString: () => `${parts.scheme}:${parts.path}?${parts.query ?? ""}`,
+	})
 	static joinPath = (base: { path: string; fsPath?: string }, ...parts: string[]) => {
 		const path = [base.path.replace(/\/$/, ""), ...parts].join("/")
 		return { path, fsPath: path }
 	}
 }
 export const ProgressLocation = { Notification: 15 }
+/** 実物と同じ値。`stat.type` の判定に使う。 */
+export const FileType = { Unknown: 0, File: 1, Directory: 2, SymbolicLink: 64 }
 export class LanguageModelTextPart {
 	constructor(public value: string) {}
 }

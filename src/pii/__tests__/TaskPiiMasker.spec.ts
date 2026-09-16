@@ -60,7 +60,7 @@ import {
 	NER_TIME_BUDGET,
 	TaskPiiMasker,
 } from "../TaskPiiMasker"
-import { resetSessionVault, sessionVault } from "../maskConversation"
+import { PiiVaultLimitError, resetSessionVault, sessionVault } from "../maskConversation"
 
 // **対応表は本製品で 1 つを共有する（`FR-PII-02b`）。** 捨てないと、前の試験で
 // 割り当てた番号が残り、`{{email-001}}` を期待する試験が `002` を見て落ちる。
@@ -576,6 +576,30 @@ describe("第 2 層が投げても、第 1 層は動かす（FR-PII-23b）", () 
 		expect(result.messages[0]).toMatchObject({ content: "{{person-001}}が担当 0" })
 		expect(result.messages.at(-1)).toMatchObject({ content: `{{person-001}}が担当 ${NER_AT_ONCE + 1}` })
 		expect(result.troubles).toEqual([])
+	})
+})
+
+describe("Session Vault の上限に当たったとき", () => {
+	it("途中まで割り当てた番号を巻き戻す", async () => {
+		// **巻き戻さないと、番号だけ進んで対応表が欠ける。** 欠けた番号を含む文が
+		// どこかに残っていれば、その伏せ字は二度と戻らない。
+		// **1 件目で落ちる形にしない。** 落ちれば入れたものが無く、巻き戻しても
+		// 巻き戻さなくても同じになる。**途中まで入った状態**を作らないと確かめられない。
+		const masker = new TaskPiiMasker({
+			enabled: true,
+			kinds: ["email"],
+			sessionVault: { maxEntries: 3 },
+		} as never)
+
+		await masker.maskPrompt("a@corp.example と b@corp.example")
+		expect(masker.allocator.size).toBe(2)
+
+		// 1 件目は入り（3 件目）、2 件目で上限に当たる。
+		await expect(masker.maskPrompt("c@corp.example と d@corp.example")).rejects.toThrow(PiiVaultLimitError)
+
+		// **途中まで入れたものが残っていない。** 残ると、番号だけ進んで対応表が欠ける。
+		expect(masker.allocator.size).toBe(2)
+		expect(masker.allocator.restore("{{email-003}}")).toBe("{{email-003}}")
 	})
 })
 

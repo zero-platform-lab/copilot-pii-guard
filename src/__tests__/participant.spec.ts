@@ -491,6 +491,150 @@ describe("伏せてから Copilot へ送る", () => {
 	})
 })
 
+describe("ファイルを触る前の同意（FR-PII-11）", () => {
+	// **同意を取る処理そのものである。** 壊れても画面は変わらない。窓が出ないだけなので、
+	// 気づけるのは後から差分を見たときだけである。
+
+	/** 道具を 1 回呼び、次の回で終わるモデル。`calls` に呼んだ道具を残す。 */
+	function toolModel(calls: { name: string; input: object }[], rounds = 1) {
+		let round = 0
+		return {
+			sendRequest: async () => {
+				round++
+				return {
+					stream: (async function* () {
+						if (round <= rounds) {
+							const call = calls[round - 1] ?? calls[0]
+							yield { callId: `call-${round}`, name: call.name, input: call.input }
+						} else {
+							yield { value: "終わりました" }
+						}
+					})(),
+				}
+			},
+		}
+	}
+
+	async function run(options: {
+		asked: unknown[]
+		approve: boolean
+		calls: { name: string; input: object }[]
+		rounds?: number
+		masker?: TaskPiiMasker
+	}) {
+		const ran: string[] = []
+		const out = fakeStream()
+		const handler = createHandler({
+			masker: () => options.masker ?? new TaskPiiMasker({ enabled: true } as never),
+			isEnabled: () => true,
+			selectModel: async () => toolModel(options.calls, options.rounds) as never,
+			tools: options.calls.map((one) => ({ name: one.name, description: one.name })),
+			confirmFileAccess: async (call) => {
+				options.asked.push(call)
+				return options.approve
+			},
+			runTool: async (name) => {
+				ran.push(name)
+				return "読みました"
+			},
+		})
+
+		await handler(
+			{ prompt: "customer.txt を読んで", references: [] } as never,
+			{ history: [] } as never,
+			out.stream as never,
+			{} as never,
+		)
+
+		return { ran, shown: out.parts.join("") }
+	}
+
+	it("読む前に必ず 1 度聞く", async () => {
+		const asked: unknown[] = []
+
+		const { ran } = await run({
+			asked,
+			approve: true,
+			calls: [{ name: "pii_guard_read_file", input: { path: "customer.txt" } }],
+		})
+
+		expect(asked).toHaveLength(1)
+		expect(ran).toEqual(["pii_guard_read_file"])
+	})
+
+	it("断ったら、道具を実行しない", async () => {
+		// **ここが要である。** 実行してしまえば、ファイルの中身はもう読まれている。
+		const asked: unknown[] = []
+
+		const { ran, shown } = await run({
+			asked,
+			approve: false,
+			calls: [{ name: "pii_guard_read_file", input: { path: "customer.txt" } }],
+		})
+
+		expect(ran).toEqual([])
+		expect(shown).not.toContain("読みました")
+	})
+
+	it("1 度答えたら、同じ依頼では聞き直さない", async () => {
+		// 毎回聞くと、道具を呼ぶたびに窓が出て、利用者は読まずに押すようになる。
+		const asked: unknown[] = []
+
+		const { ran } = await run({
+			asked,
+			approve: true,
+			rounds: 3,
+			calls: [
+				{ name: "pii_guard_read_file", input: { path: "a.txt" } },
+				{ name: "pii_guard_read_file", input: { path: "b.txt" } },
+				{ name: "pii_guard_read_file", input: { path: "c.txt" } },
+			],
+		})
+
+		expect(asked).toHaveLength(1)
+		expect(ran).toHaveLength(3)
+	})
+
+	it("1 度断ったら、同じ依頼では二度と実行しない", async () => {
+		const asked: unknown[] = []
+
+		const { ran } = await run({
+			asked,
+			approve: false,
+			rounds: 3,
+			calls: [
+				{ name: "pii_guard_read_file", input: { path: "a.txt" } },
+				{ name: "pii_guard_read_file", input: { path: "b.txt" } },
+				{ name: "pii_guard_read_file", input: { path: "c.txt" } },
+			],
+		})
+
+		expect(asked).toHaveLength(1)
+		expect(ran).toEqual([])
+	})
+
+	it("聞くときは、伏せ字ではなく元の道筋を見せる", async () => {
+		// **伏せ字のままでは、何を許可するのか分からない。** `{{path-001}} を読みます` と
+		// 出ても、利用者には判断できない。
+		const masker = new TaskPiiMasker({
+			enabled: true,
+			terms: [{ value: "顧客名簿", kind: "term" }],
+		} as never)
+		const masked = (await masker.maskPrompt("顧客名簿.txt")).text
+		expect(masked).not.toContain("顧客名簿")
+
+		const asked: { input: Record<string, unknown> }[] = []
+		await run({
+			asked: asked as never,
+			approve: true,
+			masker,
+			calls: [{ name: "pii_guard_read_file", input: { path: masked } }],
+		})
+
+		expect(asked[0].input.path).toBe("顧客名簿.txt")
+	})
+})
+
 describe("ファイル道具の権限", () => {
 	const declaredTools = [
 		{ name: "pii_guard_read_file", description: "読む" },
