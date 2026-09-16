@@ -65,6 +65,19 @@ function uriForIdentity(identity: string): vscode.Uri | undefined {
 	return folder ? vscode.Uri.joinPath(folder.uri, ...match[2].split("/")) : undefined
 }
 
+function uriForToolPath(value: string): vscode.Uri | undefined {
+	const folders = vscode.workspace.workspaceFolders ?? []
+	const parts = value.trim().replace(/\\/g, "/").split("/")
+	if (folders.length === 0 || parts.some((part) => !part || part === "." || part === "..")) return undefined
+	let folder = folders[0]
+	if (folders.length > 1) {
+		folder = folders.find((candidate) => candidate.name === parts[0]) ?? folder
+		if (folder.name !== parts[0]) return undefined
+		parts.shift()
+	}
+	return vscode.Uri.joinPath(folder.uri, ...parts)
+}
+
 function labelForIdentity(identity: string): string {
 	const match = /^(\d+):(.+)$/.exec(identity)
 	if (!match) return identity
@@ -320,15 +333,22 @@ export class FileVaultController {
 		)
 	}
 
-	async record(uri: vscode.Uri, entries: readonly FileVaultEntry[]): Promise<void> {
+	async record(uri: vscode.Uri, entries: readonly FileVaultEntry[]): Promise<boolean> {
 		const identity = fileVaultIdentity(uri)
-		if (!identity || !this.store) return
+		if (!identity || !this.store) return true
 		try {
 			await this.cleanup()
 			await this.store.appendIfEnabled(identity, entries)
+			return true
 		} catch (error) {
 			await vscode.window.showErrorMessage(errorMessage(error))
+			return false
 		}
+	}
+
+	async recordToolPath(path: string, entries: readonly FileVaultEntry[]): Promise<boolean> {
+		const uri = uriForToolPath(path)
+		return uri ? this.record(uri, entries) : true
 	}
 
 	/** 伏せ字を新しく割り当てる前に、保存済み番号をSession Vaultへ予約する。 */
@@ -344,6 +364,18 @@ export class FileVaultController {
 			await vscode.window.showErrorMessage(errorMessage(error))
 			return false
 		}
+	}
+
+	/** ファイル道具向け。衝突した保存済み伏せ字を今回の番号へ置き換える関数を返す。 */
+	async prepareToolPath(path: string, vault: PiiVault): Promise<(text: string) => string> {
+		const uri = uriForToolPath(path)
+		const identity = uri && fileVaultIdentity(uri)
+		if (!identity || !this.store) return (text) => text
+		await this.cleanup()
+		const record = await this.store.load(identity)
+		if (!record) return (text) => text
+		const remapped = vault.importEntries(record.entries)
+		return (text) => unmaskText(text, remapped)
 	}
 
 	async restore(uri: vscode.Uri, text: string, restoreSession: (text: string) => string): Promise<string> {
