@@ -162,7 +162,7 @@
 						"secret": {
 							"type": "boolean",
 							"default": true,
-							"markdownDescription": "API 鍵・token・パスワード。`AKIA…` のような形と、ラベルの付いた値"
+							"markdownDescription": "API キー・トークン・パスワード。`AKIA…` のような形と、ラベルの付いた値"
 						},
 						"zip": {
 							"type": "boolean",
@@ -223,7 +223,7 @@
 						"type": "string"
 					},
 					"default": [],
-					"description": "鍵のラベルに足す語。社内で使う語を並べます。"
+					"description": "トークンのラベルに足す語。社内で使う語を並べます。"
 				},
 				"piiGuard.properNouns.enabled": {
 					"type": "boolean",
