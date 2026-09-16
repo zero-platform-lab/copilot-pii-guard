@@ -31,6 +31,11 @@ type Envelope = {
 
 export type FileVaultRecord = Readonly<StoredFile>
 
+export type FileVaultPruneResult = {
+	expired: number
+	missing: number
+}
+
 export class FileVaultError extends Error {
 	constructor(public readonly code: "missingKey" | "corrupt" | "unsupported", cause?: unknown) {
 		super(code, { cause })
@@ -245,6 +250,79 @@ export class FileVaultStore {
 			delete catalog.files[identity]
 			await this.write(catalog, exists)
 			return count
+		})
+	}
+
+	/** ファイルまたはディレクトリ以下の関連付けを、新しい場所へ原子的に移す。 */
+	movePath(from: string, to: string): Promise<number> {
+		return this.exclusive(async () => {
+			if (from === to) return 0
+			const { catalog, exists } = await this.read()
+			const moved = Object.entries(catalog.files).filter(
+				([identity]) => identity === from || identity.startsWith(`${from}/`),
+			)
+			if (moved.length === 0) return 0
+
+			const timestamp = this.now().toISOString()
+			for (const [identity, record] of moved) {
+				const suffix = identity.slice(from.length)
+				const destination = `${to}${suffix}`
+				delete catalog.files[identity]
+				catalog.files[destination] = {
+					...record,
+					identity: destination,
+					lastUsedAt: timestamp,
+				}
+			}
+			await this.write(catalog, exists)
+			return moved.length
+		})
+	}
+
+	/** ファイルまたはディレクトリ以下の関連付けを削除する。 */
+	deletePath(identity: string): Promise<{ files: number; entries: number }> {
+		return this.exclusive(async () => {
+			const { catalog, exists } = await this.read()
+			const targets = Object.entries(catalog.files).filter(
+				([candidate]) => candidate === identity || candidate.startsWith(`${identity}/`),
+			)
+			if (targets.length === 0) return { files: 0, entries: 0 }
+			for (const [candidate] of targets) delete catalog.files[candidate]
+			await this.write(catalog, exists)
+			return {
+				files: targets.length,
+				entries: targets.reduce((sum, [, record]) => sum + record.entries.length, 0),
+			}
+		})
+	}
+
+	/** 期限切れ、または存在しない対象だけを削除する。存在確認不能は保持する。 */
+	prune(
+		retentionDays: number,
+		fileExists: (identity: string) => Promise<boolean | undefined>,
+	): Promise<FileVaultPruneResult> {
+		return this.exclusive(async () => {
+			const { catalog, exists } = await this.read()
+			if (!exists) return { expired: 0, missing: 0 }
+			const now = this.now().getTime()
+			const retentionMs = Math.max(0, retentionDays) * 24 * 60 * 60 * 1000
+			let expired = 0
+			let missing = 0
+
+			for (const [identity, record] of Object.entries(catalog.files)) {
+				if (retentionDays > 0 && now - Date.parse(record.lastUsedAt) >= retentionMs) {
+					delete catalog.files[identity]
+					expired++
+					continue
+				}
+				if ((await fileExists(identity)) === false) {
+					delete catalog.files[identity]
+					missing++
+				}
+			}
+
+			if (expired > 0 || missing > 0) await this.write(catalog, exists)
+			return { expired, missing }
 		})
 	}
 }

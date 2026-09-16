@@ -53,6 +53,9 @@ export function readSettings(): PiiMasking {
 		fileTools: {
 			mode: fileToolMode(config.get<unknown>("fileTools.mode")),
 		},
+		fileVault: {
+			retentionDays: config.get<number>("fileVault.retentionDays"),
+		},
 		kinds: checkedNames<NonNullable<PiiMasking["kinds"]>[number]>(
 			config.get<Record<string, boolean>>("kinds"),
 		),

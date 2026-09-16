@@ -31,6 +31,7 @@ function piiMasker(): TaskPiiMasker {
 
 export function activate(context: vscode.ExtensionContext): void {
 	const fileVault = new FileVaultController(context)
+	context.subscriptions.push(...fileVault.start())
 	const participant = vscode.chat.createChatParticipant(
 		"pii-guard.mask",
 		createHandler({

@@ -10,6 +10,8 @@ import { unmaskText } from "./maskText"
 
 type FileTarget = { identity: string; label: string; uri: vscode.Uri; text: string }
 
+const DEFAULT_RETENTION_DAYS = 30
+
 export function fileVaultIdentity(uri: vscode.Uri): string | undefined {
 	const folder = vscode.workspace.getWorkspaceFolder(uri)
 	if (!folder) return undefined
@@ -23,6 +25,24 @@ function errorMessage(error: unknown): string {
 	return t("common:pii.fileVault.failed")
 }
 
+function isNotFound(error: unknown): boolean {
+	return error instanceof Error && /FileNotFound|EntryNotFound/i.test(error.name)
+}
+
+function retentionDays(): number {
+	const value = vscode.workspace
+		.getConfiguration("piiGuard")
+		.get<number>("fileVault.retentionDays", DEFAULT_RETENTION_DAYS)
+	return Number.isInteger(value) && value >= 0 ? value : DEFAULT_RETENTION_DAYS
+}
+
+function uriForIdentity(identity: string): vscode.Uri | undefined {
+	const match = /^(\d+):(.+)$/.exec(identity)
+	if (!match) return undefined
+	const folder = vscode.workspace.workspaceFolders?.[Number(match[1])]
+	return folder ? vscode.Uri.joinPath(folder.uri, ...match[2].split("/")) : undefined
+}
+
 /** 利用者操作と暗号化ストアの境界。モデルからは呼ばない。 */
 export class FileVaultController {
 	private readonly store: FileVaultStore | undefined
@@ -33,6 +53,57 @@ export class FileVaultController {
 		},
 	) {
 		this.store = context.storageUri ? new FileVaultStore(context.storageUri, context.secrets) : undefined
+	}
+
+	/** 起動時の掃除と、VS Codeが通知する移動・削除への追従を開始する。 */
+	start(): vscode.Disposable[] {
+		if (!this.store) return []
+		void this.cleanup().catch((error) => vscode.window.showErrorMessage(errorMessage(error)))
+		return [
+			vscode.workspace.onDidRenameFiles((event) => {
+				void this.followRenames(event.files).catch((error) =>
+					vscode.window.showErrorMessage(errorMessage(error)),
+				)
+			}),
+			vscode.workspace.onDidDeleteFiles((event) => {
+				void this.followDeletes(event.files).catch((error) =>
+					vscode.window.showErrorMessage(errorMessage(error)),
+				)
+			}),
+		]
+	}
+
+	private async identityExists(identity: string): Promise<boolean | undefined> {
+		const uri = uriForIdentity(identity)
+		if (!uri) return undefined
+		try {
+			await vscode.workspace.fs.stat(uri)
+			return true
+		} catch (error) {
+			return isNotFound(error) ? false : undefined
+		}
+	}
+
+	async cleanup(): Promise<void> {
+		await this.store?.prune(retentionDays(), (identity) => this.identityExists(identity))
+	}
+
+	private async followRenames(files: readonly { oldUri: vscode.Uri; newUri: vscode.Uri }[]): Promise<void> {
+		if (!this.store) return
+		for (const { oldUri, newUri } of files) {
+			const from = fileVaultIdentity(oldUri)
+			const to = fileVaultIdentity(newUri)
+			if (from && to) await this.store.movePath(from, to)
+			else if (from) await this.store.deletePath(from)
+		}
+	}
+
+	private async followDeletes(files: readonly vscode.Uri[]): Promise<void> {
+		if (!this.store) return
+		for (const uri of files) {
+			const identity = fileVaultIdentity(uri)
+			if (identity) await this.store.deletePath(identity)
+		}
 	}
 
 	private activeTarget(): FileTarget | undefined {
@@ -61,6 +132,7 @@ export class FileVaultController {
 		const target = await this.requireTarget()
 		if (!target || !this.store) return
 		try {
+			await this.cleanup()
 			const existing = await this.store.inspect(target.identity)
 			if (existing) {
 				vault.importEntries(existing.entries)
@@ -96,6 +168,7 @@ export class FileVaultController {
 		const target = await this.requireTarget()
 		if (!target || !this.store) return
 		try {
+			await this.cleanup()
 			const record = await this.store.inspect(target.identity)
 			if (!record) {
 				await vscode.window.showInformationMessage(t("common:pii.fileVault.notEnabled", { file: target.label }))
@@ -119,6 +192,7 @@ export class FileVaultController {
 		const target = await this.requireTarget()
 		if (!target || !this.store) return
 		try {
+			await this.cleanup()
 			const record = await this.store.inspect(target.identity)
 			await vscode.window.showInformationMessage(
 				record
@@ -133,6 +207,7 @@ export class FileVaultController {
 	async record(uri: vscode.Uri, entries: readonly FileVaultEntry[]): Promise<void> {
 		const identity = fileVaultIdentity(uri)
 		if (!identity || !this.store) return
+		await this.cleanup()
 		await this.store.appendIfEnabled(identity, entries)
 	}
 
@@ -141,6 +216,7 @@ export class FileVaultController {
 		const identity = fileVaultIdentity(uri)
 		if (!identity || !this.store) return true
 		try {
+			await this.cleanup()
 			const record = await this.store.load(identity)
 			if (record) vault.importEntries(record.entries)
 			return true
@@ -153,6 +229,7 @@ export class FileVaultController {
 	async restore(uri: vscode.Uri, text: string, restoreSession: (text: string) => string): Promise<string> {
 		const identity = fileVaultIdentity(uri)
 		if (!identity || !this.store) return restoreSession(text)
+		await this.cleanup()
 		const record = await this.store.load(identity)
 		return restoreSession(record ? unmaskText(text, new Map(record.entries)) : text)
 	}

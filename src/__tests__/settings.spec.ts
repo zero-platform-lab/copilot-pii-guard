@@ -77,6 +77,10 @@ describe("チェックの形を、名前の並びへ変える", () => {
 	it("未知のファイル道具モードは権限を広げず off にする", () => {
 		expect(withConfig({ "fileTools.mode": "alwaysWrite" }).fileTools?.mode).toBe("off")
 	})
+
+	it("File Vaultの保持日数を読む", () => {
+		expect(withConfig({ "fileVault.retentionDays": 30 }).fileVault?.retentionDays).toBe(30)
+	})
 })
 
 describe("package.json と食い違わない", () => {
@@ -102,5 +106,14 @@ describe("package.json と食い違わない", () => {
 
 		expect(declared.enum).toEqual(fileToolModes)
 		expect(declared.default).toBe("confirmEdit")
+	})
+
+	it("File Vaultの保持日数は30日が既定で、0日を許す", async () => {
+		const declared = (await manifestProperties())["piiGuard.fileVault.retentionDays"] as unknown as {
+			default: number
+			minimum: number
+		}
+
+		expect(declared).toMatchObject({ default: 30, minimum: 0 })
 	})
 })

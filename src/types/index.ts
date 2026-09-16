@@ -32,6 +32,11 @@ export type PiiMasking = {
 	fileTools?: {
 		mode?: FileToolMode
 	}
+	/** ファイルごとに暗号化保存する対応表の保持条件。 */
+	fileVault?: {
+		/** 最終利用からの保持日数。0 は時間による期限なし。 */
+		retentionDays?: number
+	}
 	/** 伏せる種類。省略すると全部。 */
 	kinds?: PiiKind[]
 	/** 利用者が挙げた語。 */

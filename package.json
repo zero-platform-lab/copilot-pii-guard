@@ -61,6 +61,13 @@
 					"default": "confirmEdit",
 					"markdownDescription": "`@mask` に渡すファイル道具の権限です。伏せ字化が切のときは、この設定にかかわらず `off` になります。"
 				},
+				"piiGuard.fileVault.retentionDays": {
+					"type": "integer",
+					"default": 30,
+					"minimum": 0,
+					"maximum": 3650,
+					"markdownDescription": "File Vaultを最終利用から保持する日数です。`0` は時間による期限なしです。対象ファイルが無くなった場合は、この設定にかかわらず削除します。"
+				},
 				"piiGuard.kinds": {
 					"type": "object",
 					"markdownDescription": "基本検出・辞書・固有名詞検出に共通する、最終的な伏せ字の種類。外した種類は、どの方式で見つけてもそのまま送られます。",
