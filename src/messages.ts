@@ -27,6 +27,19 @@ const MESSAGES: Record<string, string> = {
 	"common:pii.fileVault.unsupported": "未対応形式のFile Vaultは読込も上書きもしません。",
 	"common:pii.fileVault.failed": "File Vaultを安全に読み込めませんでした。既存データは変更していません。",
 	"common:pii.fileVault.saveFailed": "ファイルは伏せましたが、File Vaultを更新できませんでした。",
+	"common:pii.fileVault.maxFiles": "File Vaultのファイル数が設定上限に達したため、保存しませんでした。",
+	"common:pii.fileVault.maxEntries": "このファイルの対応数が設定上限に達したため、保存しませんでした。",
+	"common:pii.fileVault.maxBytes": "File Vault全体の容量が設定上限に達したため、保存しませんでした。",
+	"common:pii.fileVault.none": "消去できるFile Vaultがありません。",
+	"common:pii.fileVault.entryCount": "対応 {{count}} 件",
+	"common:pii.fileVault.pickClear": "消去するFile Vaultを選んでください。",
+	"common:pii.fileVault.confirmClearMany":
+		"File Vault {{files}} ファイル、対応 {{count}} 件を消去します。消去後は元の値へ戻せません。",
+	"common:pii.fileVault.clearedMany": "File Vault {{files}} ファイル、対応 {{count}} 件を消去しました。",
+	"common:pii.fileVault.confirmClearAll":
+		"File Vault {{files}} ファイル（対応 {{fileCount}} 件）とSession Vault（対応 {{sessionCount}} 件）をすべて消去します。消去後は元の値へ戻せません。",
+	"common:pii.fileVault.clearedAll":
+		"File Vault {{files}} ファイル（対応 {{fileCount}} 件）とSession Vault（対応 {{sessionCount}} 件）を消去しました。",
 	"common:pii.nothingToRestore": "このファイルに伏せ字はありません。",
 	"common:pii.nothingFound": "伏せる個人情報は見つかりませんでした。",
 	"common:pii.found": "{{summary}} が見つかりました。ファイルは変更していません。",

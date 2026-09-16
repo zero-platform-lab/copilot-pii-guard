@@ -9,6 +9,7 @@ export const window = {
 	showInformationMessage: vi.fn(async () => undefined),
 	showWarningMessage: vi.fn(async () => undefined),
 	showErrorMessage: vi.fn(async () => undefined),
+	showQuickPick: vi.fn(async () => undefined),
 	activeTextEditor: undefined as unknown,
 	withProgress: vi.fn(async (_options: unknown, task: (progress: unknown) => unknown) =>
 		task({ report: () => {} }),

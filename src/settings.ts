@@ -55,6 +55,9 @@ export function readSettings(): PiiMasking {
 		},
 		fileVault: {
 			retentionDays: config.get<number>("fileVault.retentionDays"),
+			maxFiles: config.get<number>("fileVault.maxFiles"),
+			maxEntriesPerFile: config.get<number>("fileVault.maxEntriesPerFile"),
+			maxBytes: config.get<number>("fileVault.maxBytes"),
 		},
 		kinds: checkedNames<NonNullable<PiiMasking["kinds"]>[number]>(
 			config.get<Record<string, boolean>>("kinds"),

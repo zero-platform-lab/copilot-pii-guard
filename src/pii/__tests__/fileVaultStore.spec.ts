@@ -190,4 +190,72 @@ describe("FileVaultStore", () => {
 		expect(await store.inspect("0:missing.md")).toBeUndefined()
 		expect(await store.inspect("0:unknown.md")).toBeDefined()
 	})
+
+	it("選んだ複数ファイルだけを1回の更新で消去する", async () => {
+		const memory = memoryFileSystem()
+		const secret = secretStorage()
+		const store = new FileVaultStore(root(), secret.secrets, memory.fs as never)
+		await store.enable("0:a.md", [["{{email-001}}", "a@corp.example"]])
+		await store.enable("0:b.md", [["{{email-002}}", "b@corp.example"]])
+		await store.enable("0:c.md", [["{{email-003}}", "c@corp.example"]])
+
+		expect(await store.deleteMany(["0:a.md", "0:c.md"])).toEqual({ files: 2, entries: 2 })
+		expect(await store.inspect("0:a.md")).toBeUndefined()
+		expect(await store.inspect("0:b.md")).toBeDefined()
+		expect(await store.inspect("0:c.md")).toBeUndefined()
+	})
+
+	it("ファイル数と1ファイルの対応数の上限を越えて既存データを上書きしない", async () => {
+		const memory = memoryFileSystem()
+		const secret = secretStorage()
+		let limits = { maxFiles: 1, maxEntriesPerFile: 2, maxBytes: 100_000 }
+		const store = new FileVaultStore(root(), secret.secrets, memory.fs as never, undefined, () => limits)
+		await store.enable("0:a.md", [["{{email-001}}", "a@corp.example"]])
+		const beforeFileLimit = memory.files.get(target)
+
+		await expect(store.enable("0:b.md")).rejects.toMatchObject({ code: "maxFiles" })
+		expect(memory.files.get(target)).toEqual(beforeFileLimit)
+
+		limits = { ...limits, maxFiles: 2 }
+		await store.appendIfEnabled("0:a.md", [["{{email-002}}", "b@corp.example"]])
+		const beforeEntryLimit = memory.files.get(target)
+		await expect(
+			store.appendIfEnabled("0:a.md", [["{{email-003}}", "c@corp.example"]]),
+		).rejects.toMatchObject({ code: "maxEntries" })
+		expect(memory.files.get(target)).toEqual(beforeEntryLimit)
+	})
+
+	it("全体容量の上限を越えて既存データを上書きしない", async () => {
+		const memory = memoryFileSystem()
+		const secret = secretStorage()
+		const store = new FileVaultStore(root(), secret.secrets, memory.fs as never, undefined, () => ({
+			maxFiles: 10,
+			maxEntriesPerFile: 10,
+			maxBytes: 200,
+		}))
+
+		await expect(
+			store.enable("0:a.md", [["{{email-001}}", "a".repeat(300)]]),
+		).rejects.toMatchObject({ code: "maxBytes" })
+		expect(memory.files.has(target)).toBe(false)
+	})
+
+	it("上限が0ならファイル数・対応数・全体容量を制限しない", async () => {
+		const memory = memoryFileSystem()
+		const secret = secretStorage()
+		const store = new FileVaultStore(root(), secret.secrets, memory.fs as never, undefined, () => ({
+			maxFiles: 0,
+			maxEntriesPerFile: 0,
+			maxBytes: 0,
+		}))
+
+		await store.enable("0:a.md", [
+			["{{email-001}}", "a".repeat(300)],
+			["{{email-002}}", "b".repeat(300)],
+		])
+		await store.enable("0:b.md", [["{{email-003}}", "c".repeat(300)]])
+
+		expect((await store.inspect("0:a.md"))?.entries).toHaveLength(2)
+		expect(await store.inspect("0:b.md")).toBeDefined()
+	})
 })
