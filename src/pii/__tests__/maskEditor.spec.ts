@@ -180,6 +180,30 @@ describe("maskSecretsInActiveEditor", () => {
 		)
 	})
 
+	it("編集適用後にFile Vault用の対応を渡す", async () => {
+		mocks.activeTextEditor = editorWith("taro@corp.example")
+		answerConfirm()
+		const persist = vi.fn(async () => undefined)
+
+		await maskSecretsInActiveEditor({ kinds: ["email"] }, undefined, undefined, persist)
+
+		expect(persist).toHaveBeenCalledExactlyOnceWith(
+			{ fsPath: "/w/note.md" },
+			[["{{email-001}}", "taro@corp.example"]],
+		)
+	})
+
+	it("編集に失敗した場合はFile Vaultへ保存しない", async () => {
+		mocks.activeTextEditor = editorWith("taro@corp.example")
+		answerConfirm()
+		mocks.applyEdit.mockResolvedValueOnce(false)
+		const persist = vi.fn(async () => undefined)
+
+		await maskSecretsInActiveEditor({ kinds: ["email"] }, undefined, undefined, persist)
+
+		expect(persist).not.toHaveBeenCalled()
+	})
+
 	it("会話の対応表を渡すと、その続きから番号を振る", async () => {
 		const allocator = createAllocator()
 		// 会話の側で 001 を別の値へ割り当て済み、という状況。

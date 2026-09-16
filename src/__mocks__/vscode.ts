@@ -17,9 +17,17 @@ export const window = {
 
 export const workspace = {
 	getConfiguration: vi.fn(() => ({ get: () => undefined })),
+	getWorkspaceFolder: vi.fn(),
+	asRelativePath: vi.fn((uri: { path?: string; fsPath?: string }) => uri.path ?? uri.fsPath ?? ""),
 	openTextDocument: vi.fn(),
 	applyEdit: vi.fn(async () => true),
-	fs: { writeFile: vi.fn(async () => undefined), readFile: vi.fn(async () => new Uint8Array()) },
+	fs: {
+		writeFile: vi.fn(async () => undefined),
+		readFile: vi.fn(async () => new Uint8Array()),
+		createDirectory: vi.fn(async () => undefined),
+		rename: vi.fn(async () => undefined),
+		delete: vi.fn(async () => undefined),
+	},
 }
 
 export const commands = { registerCommand: vi.fn(), executeCommand: vi.fn() }
@@ -43,6 +51,10 @@ export class WorkspaceEdit {
 }
 export class Uri {
 	static file = (path: string) => ({ fsPath: path, path })
+	static joinPath = (base: { path: string; fsPath?: string }, ...parts: string[]) => {
+		const path = [base.path.replace(/\/$/, ""), ...parts].join("/")
+		return { path, fsPath: path }
+	}
 }
 export const ProgressLocation = { Notification: 15 }
 export class LanguageModelTextPart {

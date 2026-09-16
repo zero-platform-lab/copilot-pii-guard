@@ -8,7 +8,7 @@ import {
 	type MaskOptions,
 	type PlaceholderAllocator,
 } from "./maskText"
-import type { PiiKind } from "./types"
+import { PII_KINDS, type PiiKind } from "./types"
 
 /**
  * 会話の全体を伏せ字へ置き換える。
@@ -85,6 +85,21 @@ export class PiiVault implements PlaceholderAllocator {
 	/** 伏せ字を元の値へ戻す（`FR-PII-02a`）。割り当てたものだけを戻す（`FR-PII-08a`）。 */
 	restore(text: string): string {
 		return unmaskText(text, this.allocator.table)
+	}
+
+	/** 保存済み対応を取り込み、衝突した伏せ字には別の番号を割り当てる。 */
+	importEntries(entries: Iterable<readonly [string, string]>): ReadonlyMap<string, string> {
+		const remapped = new Map<string, string>()
+		const before = this.size
+		for (const [placeholder, value] of entries) {
+			const match = /^\{\{([a-z]+)-(\d{3,})\}\}$/.exec(placeholder)
+			if (!match || !PII_KINDS.includes(match[1] as PiiKind)) continue
+			const kind = match[1] as PiiKind
+			const imported = this.allocator.reserve(kind, value, placeholder)
+			remapped.set(placeholder, imported)
+		}
+		if (this.size !== before) this.currentRevision++
+		return remapped
 	}
 
 	/**
