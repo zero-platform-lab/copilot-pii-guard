@@ -82,6 +82,10 @@ describe("チェックの形を、名前の並びへ変える", () => {
 		expect(withConfig({ "fileVault.retentionDays": 30 }).fileVault?.retentionDays).toBe(30)
 	})
 
+	it("Session Vaultの対応数上限を読む", () => {
+		expect(withConfig({ "sessionVault.maxEntries": 10_000 }).sessionVault?.maxEntries).toBe(10_000)
+	})
+
 	it("File Vaultの容量上限を読む", () => {
 		expect(
 			withConfig({

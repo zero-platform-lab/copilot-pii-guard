@@ -11,6 +11,7 @@
 import * as vscode from "vscode"
 
 import type { TaskPiiMasker } from "./pii/TaskPiiMasker"
+import { PiiVaultLimitError } from "./pii/maskConversation"
 import { createStreamRestorer } from "./stream"
 import { t } from "./messages"
 import type { AgentMessage, FileToolMode } from "./types"
@@ -387,7 +388,12 @@ export function createHandler(deps: ParticipantDeps): vscode.ChatRequestHandler 
 				content: promptWithReferences(request.prompt, references.texts),
 			},
 		]
-		const masked = await masker.maskForRequest("", messages)
+		const masked = await masker.maskForRequest("", messages).catch((error: unknown) => {
+			if (!(error instanceof PiiVaultLimitError)) throw error
+			stream.markdown(`> ⚠️ ${t("common:pii.sessionVault.maxEntries")}\n\n`)
+			return undefined
+		})
+		if (!masked) return
 		const current = masked.messages.at(-1)
 		const currentText = current?.type === "message" && typeof current.content === "string" ? current.content : ""
 

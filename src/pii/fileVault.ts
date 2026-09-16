@@ -11,7 +11,7 @@ import {
 	type FileVaultEntry,
 	type FileVaultLimits,
 } from "./fileVaultStore"
-import { PiiVault } from "./maskConversation"
+import { PiiVault, PiiVaultLimitError } from "./maskConversation"
 import { unmaskText } from "./maskText"
 
 type FileTarget = { identity: string; label: string; uri: vscode.Uri; text: string }
@@ -27,6 +27,7 @@ export function fileVaultIdentity(uri: vscode.Uri): string | undefined {
 }
 
 function errorMessage(error: unknown): string {
+	if (error instanceof PiiVaultLimitError) return t("common:pii.sessionVault.maxEntries")
 	if (error instanceof FileVaultError) return t(`common:pii.fileVault.${error.code}`)
 	return t("common:pii.fileVault.failed")
 }

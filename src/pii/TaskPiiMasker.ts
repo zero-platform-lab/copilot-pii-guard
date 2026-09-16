@@ -3,7 +3,15 @@ import type { AgentMessage, PiiMasking } from "../types"
 import { promises as fs } from "fs"
 
 import { defaultDictionaryPath, readDictionaries, resolveDictionaryPath } from "./dictionary"
-import { collectTexts, maskConversation, MEMO_LIMIT, PiiVault, sessionVault, type MaskMemo } from "./maskConversation"
+import {
+	collectTexts,
+	maskConversation,
+	MEMO_LIMIT,
+	PiiVault,
+	PiiVaultLimitError,
+	sessionVault,
+	type MaskMemo,
+} from "./maskConversation"
 import { detectWith, loadBackend, type NerBackend } from "./nerBackend"
 import { defaultModelDirectory, describeCheck, hasNerRuntime } from "./nerModel"
 import { applyPlan, planMasking, type MaskOptions } from "./maskText"
@@ -387,6 +395,7 @@ export class TaskPiiMasker {
 		/** シークレットモードが入っていたか。切のときは呼び出し側も何も出さない。 */
 		enabled: boolean
 	}> {
+		this.vault.setMaxEntries(this.settings.sessionVault?.maxEntries)
 		if (!this.enabled) {
 			return { systemPrompt, messages, counts: {}, troubles: [], enabled: false }
 		}
@@ -394,8 +403,14 @@ export class TaskPiiMasker {
 		const options = await this.options()
 		const properNouns = await this.properNouns(collectTexts(systemPrompt, messages))
 
-		const result = maskConversation(systemPrompt, messages, { ...options, properNouns }, this.vault, this.memo)
-		return { ...result, troubles: this.takeDictionaryTroubles(), enabled: true }
+		const checkpoint = this.vault.checkpoint()
+		try {
+			const result = maskConversation(systemPrompt, messages, { ...options, properNouns }, this.vault, this.memo)
+			return { ...result, troubles: this.takeDictionaryTroubles(), enabled: true }
+		} catch (error) {
+			if (error instanceof PiiVaultLimitError) this.vault.rollback(checkpoint)
+			throw error
+		}
 	}
 
 	/**
@@ -408,6 +423,7 @@ export class TaskPiiMasker {
 	 * 伏せ字のままでは読めない。
 	 */
 	async maskPrompt(text: string): Promise<{ text: string; restore: (text: string) => string }> {
+		this.vault.setMaxEntries(this.settings.sessionVault?.maxEntries)
 		if (!this.enabled) {
 			return { text, restore: (one) => one }
 		}
@@ -417,8 +433,14 @@ export class TaskPiiMasker {
 		const options = await this.options()
 		const properNouns = await this.properNouns([text])
 
-		const plan = planMasking(text, { ...options, properNouns }, undefined, this.vault)
-		return { text: applyPlan(text, plan.edits), restore: (one) => this.vault.restore(one) }
+		const checkpoint = this.vault.checkpoint()
+		try {
+			const plan = planMasking(text, { ...options, properNouns }, undefined, this.vault)
+			return { text: applyPlan(text, plan.edits), restore: (one) => this.vault.restore(one) }
+		} catch (error) {
+			if (error instanceof PiiVaultLimitError) this.vault.rollback(checkpoint)
+			throw error
+		}
 	}
 
 	/**
@@ -464,6 +486,7 @@ export class TaskPiiMasker {
 	 * 分けると、同じ形の伏せ字が別の値を指すことになる。
 	 */
 	get allocator(): PiiVault {
+		this.vault.setMaxEntries(this.settings.sessionVault?.maxEntries)
 		return this.vault
 	}
 

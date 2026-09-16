@@ -53,6 +53,9 @@ export function readSettings(): PiiMasking {
 		fileTools: {
 			mode: fileToolMode(config.get<unknown>("fileTools.mode")),
 		},
+		sessionVault: {
+			maxEntries: config.get<number>("sessionVault.maxEntries"),
+		},
 		fileVault: {
 			retentionDays: config.get<number>("fileVault.retentionDays"),
 			maxFiles: config.get<number>("fileVault.maxFiles"),
