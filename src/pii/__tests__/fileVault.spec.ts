@@ -256,6 +256,28 @@ describe("FileVaultController", () => {
 			)
 		})
 
+		it("消えたファイルは掃除し、読めないだけのものは残す", async () => {
+			// **「無い」と「読めない」を取り違えない。** 取り違えると、ディスクの不調で
+			// 一時的に読めないだけの保管庫を消してしまう。**消せばもう戻せない。**
+			const { controller } = await started()
+			// `stat` が「無い」以外で失敗する状態にする。
+			const original = vscode.workspace.fs.stat
+			;(vscode.workspace.fs as { stat: unknown }).stat = async () => {
+				throw new Error("ディスクが不調")
+			}
+
+			try {
+				await controller.cleanup()
+				await controller.status()
+			} finally {
+				;(vscode.workspace.fs as { stat: unknown }).stat = original
+			}
+
+			expect(mocks.showInformationMessage).toHaveBeenCalledWith(
+				expect.stringContaining("common:pii.fileVault.statusEnabled"),
+			)
+		})
+
 		it("識別できないファイルの削除は、何も壊さない", async () => {
 			const { controller } = await started()
 

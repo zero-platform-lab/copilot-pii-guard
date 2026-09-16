@@ -82,6 +82,26 @@ describe("道筋の検査（作業場所の外を触らせない）", () => {
 		await expect(read(path)).rejects.toThrow("`.`、`..`、空の区切り")
 	})
 
+	it("シンボリックリンクは扱わない", async () => {
+		// **道筋の文字列だけでは防げない。** `note.md` が外を指すリンクなら、検査を
+		// すり抜けて作業場所の外を読める。
+		folders("w")
+		vi.mocked(vscode.workspace.fs.stat).mockResolvedValue({ type: 64, mtime: 0, size: 0 } as never)
+
+		await expect(read("note.md")).rejects.toThrow("シンボリックリンク")
+	})
+
+	it("途中のディレクトリがリンクでも断る", async () => {
+		folders("w")
+		let seen = 0
+		// 1 つ目（ディレクトリ）だけリンクにする。
+		vi.mocked(vscode.workspace.fs.stat).mockImplementation(
+			async () => ({ type: seen++ === 0 ? 64 : 1, mtime: 0, size: 0 }) as never,
+		)
+
+		await expect(read("docs/note.md")).rejects.toThrow("シンボリックリンク")
+	})
+
 	it("作業場所が 2 つ以上なら、先頭に名前を求める", async () => {
 		// 求めないと、どちらの作業場所のファイルか決められない。黙って片方を選ぶと、
 		// 別の作業場所のファイルを読むことになる。
@@ -94,6 +114,112 @@ describe("道筋の検査（作業場所の外を触らせない）", () => {
 		folders("w", "x")
 
 		await expect(read("w")).rejects.toThrow("ファイルの相対パス")
+	})
+})
+
+describe("書き込む前の同意", () => {
+	// **同意を取る処理そのものである。** 壊れても画面は変わらない。窓が出ないだけなので、
+	// 気づけるのは後からファイルを見たときだけである。
+
+	const write = (content = "新しい本文") =>
+		runFileTool(
+			"pii_guard_write_file",
+			{ path: "note.md", content },
+			new TaskPiiMasker({ enabled: true } as never),
+			{ restoreWrites: false, token },
+		)
+
+	/** 既に開かれているファイルとして振る舞わせる。 */
+	const openDocument = (text = "元の本文") => {
+		vi.mocked(vscode.workspace.openTextDocument).mockResolvedValue({
+			uri: { path: "/w/note.md", fsPath: "/w/note.md" },
+			version: 1,
+			isDirty: false,
+			getText: () => text,
+		} as never)
+	}
+
+	beforeEach(() => {
+		vi.clearAllMocks()
+		setFolders([{ index: 0, name: "w", uri: { path: "/w", fsPath: "/w" } }])
+		vi.mocked(vscode.workspace.fs.stat).mockResolvedValue({ mtime: 10, size: 20 } as never)
+		vi.mocked(vscode.workspace.applyEdit).mockResolvedValue(true)
+	})
+
+	afterEach(() => setFolders(undefined))
+
+	it("「書き込む」と答えなければ、ディスクへ触らない", async () => {
+		// **ここが要である。** 触ってしまえば、もう元には戻らない。
+		openDocument()
+		vi.mocked(vscode.window.showWarningMessage).mockResolvedValue(undefined as never)
+
+		const result = await write()
+
+		expect(result).toContain("取り消しました")
+		expect(vscode.workspace.applyEdit).not.toHaveBeenCalled()
+	})
+
+	it("聞く前に、差分を見せる", async () => {
+		// **見せずに聞かない。** 何が変わるのか分からないまま押させることになる。
+		openDocument()
+		vi.mocked(vscode.window.showWarningMessage).mockResolvedValue(undefined as never)
+
+		await write()
+
+		expect(vscode.commands.executeCommand).toHaveBeenCalledWith(
+			"vscode.diff",
+			expect.anything(),
+			expect.anything(),
+			expect.stringContaining("note.md"),
+			expect.anything(),
+		)
+		// 差分を出したのが先である。
+		const diffOrder = vi.mocked(vscode.commands.executeCommand).mock.invocationCallOrder[0]
+		const askOrder = vi.mocked(vscode.window.showWarningMessage).mock.invocationCallOrder[0]
+		expect(diffOrder).toBeLessThan(askOrder)
+	})
+
+	it("いまの状態を確かめられなければ、書かない", async () => {
+		// **番兵が働かない状態で書かない。** 書けば、人が編集した内容を黙って潰しうる。
+		openDocument()
+		vi.mocked(vscode.workspace.fs.stat).mockRejectedValue(new Error("stat できない"))
+
+		await expect(write()).rejects.toThrow("現在のファイル状態を確認できませんでした")
+		expect(vscode.workspace.applyEdit).not.toHaveBeenCalled()
+		expect(vscode.window.showWarningMessage).toHaveBeenCalledWith(
+			expect.stringContaining("確認できませんでした"),
+		)
+	})
+
+	it("新しいファイルなら、空との比較にする", async () => {
+		// 開けないのは、まだ無いからである。無いことを理由に止めない。
+		vi.mocked(vscode.workspace.openTextDocument).mockRejectedValue(new Error("まだ無い"))
+		vi.mocked(vscode.workspace.fs.stat).mockRejectedValue(new Error("まだ無い"))
+		vi.mocked(vscode.window.showWarningMessage).mockResolvedValue(undefined as never)
+
+		const result = await write()
+
+		expect(result).toContain("取り消しました")
+		expect(vscode.commands.executeCommand).toHaveBeenCalled()
+	})
+
+	it("伏せ字のまま書くのか、戻して書くのかを、聞くときに出す", async () => {
+		// **どちらで書くかは、押す前に分からなければ意味が無い。**
+		openDocument()
+		vi.mocked(vscode.window.showWarningMessage).mockResolvedValue(undefined as never)
+
+		await runFileTool(
+			"pii_guard_write_file",
+			{ path: "note.md", content: "本文" },
+			new TaskPiiMasker({ enabled: true } as never),
+			{ restoreWrites: true, token },
+		)
+
+		expect(vscode.window.showWarningMessage).toHaveBeenCalledWith(
+			expect.stringContaining("元の値へ復元して"),
+			expect.anything(),
+			"書き込む",
+		)
 	})
 })
 
