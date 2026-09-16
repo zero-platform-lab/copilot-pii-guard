@@ -82,6 +82,7 @@ export const FILE_TOOLS: readonly vscode.LanguageModelChatTool[] = [
 
 export type FileSearchMatch = { path: string; line: number; text: string }
 export type FileWriteResult = { saved: boolean }
+export type FileWriteApproval = { revision?: unknown }
 
 /** VS Codeへの入出力を試験で差し替えるための細い境界。 */
 export type FileToolHost = {
@@ -93,8 +94,12 @@ export type FileToolHost = {
 		token: vscode.CancellationToken,
 	) => Promise<FileSearchMatch[]>
 	readFile: (path: string) => Promise<string>
-	writeFile: (path: string, content: string) => Promise<FileWriteResult | void>
-	confirmWrite: (path: string, restored: boolean) => Promise<boolean>
+	writeFile: (path: string, content: string, approval?: FileWriteApproval) => Promise<FileWriteResult | void>
+	confirmWrite: (
+		path: string,
+		restored: boolean,
+		content: string,
+	) => Promise<boolean | FileWriteApproval>
 }
 
 function stringInput(input: object, key: string, required = true): string {
@@ -166,8 +171,9 @@ export async function runFileTool(
 		const safeContent = (await masker.maskPrompt(content)).text
 		const written = options.restoreWrites ? masker.restoreExplicitly(safeContent) : safeContent
 
-		if (!(await host.confirmWrite(path, options.restoreWrites))) return "利用者がファイルの書き込みを取り消しました。"
-		const writeResult = await host.writeFile(path, written)
+		const approval = await host.confirmWrite(path, options.restoreWrites, written)
+		if (!approval) return "利用者がファイルの書き込みを取り消しました。"
+		const writeResult = await host.writeFile(path, written, approval === true ? undefined : approval)
 		const contentMode = options.restoreWrites ? "元の値を復元して" : "伏せ字のまま"
 		result = writeResult?.saved
 			? `${path} を${contentMode}ディスクへ保存しました。`
@@ -269,15 +275,25 @@ const defaultFileToolHost: FileToolHost = {
 		return textFromFile(await workspaceFile(path))
 	},
 
-	async writeFile(path, content) {
+	async writeFile(path, content, approval) {
 		const uri = await workspaceFile(path, true)
 		const edit = new vscode.WorkspaceEdit()
 		let document: vscode.TextDocument | undefined
 		try {
 			document = await vscode.workspace.openTextDocument(uri)
+		} catch {
+			// 新規ファイルは、確認後も存在しない場合だけ作成する。
+		}
+		const revision = approval?.revision as WriteRevision | undefined
+		if (!writeRevisionMatches(revision, document, await fileStamp(uri))) {
+			const message = `確認中にファイルが変更されたため、書き込みを停止しました: ${path}`
+			await vscode.window.showWarningMessage(message)
+			throw new Error(message)
+		}
+		if (document) {
 			const end = document.positionAt(document.getText().length)
 			edit.replace(uri, new vscode.Range(new vscode.Position(0, 0), end), content)
-		} catch {
+		} else {
 			edit.createFile(uri, { overwrite: false })
 			edit.insert(uri, new vscode.Position(0, 0), content)
 		}
@@ -286,13 +302,85 @@ const defaultFileToolHost: FileToolHost = {
 		return { saved: !document.isDirty }
 	},
 
-	async confirmWrite(path, restored) {
+	async confirmWrite(path, restored, content) {
+		const uri = await workspaceFile(path, true)
+		let document: vscode.TextDocument | undefined
+		try {
+			document = await vscode.workspace.openTextDocument(uri)
+		} catch {
+			// 新規ファイルは空の本文との比較にする。
+		}
+		const stamp = await fileStamp(uri)
+		if (document && stamp === undefined) {
+			const message = `現在のファイル状態を確認できませんでした: ${path}`
+			await vscode.window.showWarningMessage(message)
+			throw new Error(message)
+		}
+		const revision: WriteRevision = document
+			? { existed: true, version: document.version, text: document.getText(), stamp }
+			: { existed: false, stamp }
+		const before = document?.uri ?? previewUri(path, "before", "")
+		const after = previewUri(path, "after", content)
+		const restoreState = restored ? "Write Restore: 入" : "Write Restore: 切"
+		await vscode.commands.executeCommand("vscode.diff", before, after, `PII Guard: ${path} (${restoreState})`, {
+			preview: true,
+		})
 		const mode = restored ? "元の値へ復元して" : "伏せ字のまま"
 		const choice = await vscode.window.showWarningMessage(
-			`権限: confirmEdit。${path} へ${mode}書き込みます。既存の内容は置き換えられます。`,
+			`差分を確認してください。権限: confirmEdit。${path} へ${mode}書き込みます。`,
 			{ modal: true },
 			"書き込む",
 		)
-		return choice === "書き込む"
+		return choice === "書き込む" ? { revision } : false
 	},
+}
+
+type WriteRevision = { existed: boolean; version?: number; text?: string; stamp?: string }
+
+async function fileStamp(uri: vscode.Uri): Promise<string | undefined> {
+	try {
+		const stat = await vscode.workspace.fs.stat(uri)
+		return `${stat.mtime}:${stat.size}`
+	} catch {
+		return undefined
+	}
+}
+
+export function writeRevisionMatches(
+	revision: WriteRevision | undefined,
+	document: Pick<vscode.TextDocument, "version" | "getText"> | undefined,
+	stamp?: string,
+): boolean {
+	if (!revision) return true
+	if (revision.stamp !== stamp) return false
+	if (!revision.existed) return document === undefined
+	return document !== undefined && revision.version === document.version && revision.text === document.getText()
+}
+
+const previews = new Map<string, string>()
+let previewProvider: vscode.Disposable | undefined
+let previewSequence = 0
+
+export function disposeFileToolPreviews(): void {
+	previewProvider?.dispose()
+	previewProvider = undefined
+	previews.clear()
+}
+
+function previewUri(path: string, side: string, content: string): vscode.Uri {
+	if (!previewProvider) {
+		previewProvider = vscode.workspace.registerTextDocumentContentProvider("pii-guard-preview", {
+			provideTextDocumentContent(uri) {
+				return previews.get(uri.toString()) ?? ""
+			},
+		})
+	}
+	const uri = vscode.Uri.from({
+		scheme: "pii-guard-preview",
+		path: `/${encodeURIComponent(path)}`,
+		query: `${side}-${++previewSequence}`,
+	})
+	previews.set(uri.toString(), content)
+	if (previews.size > 20) previews.delete(previews.keys().next().value as string)
+	return uri
 }
