@@ -302,6 +302,21 @@
 				"category": "PII Guard"
 			},
 			{
+				"command": "piiGuard.enableFileVault",
+				"title": "このファイルのFile Vaultを有効にする",
+				"category": "PII Guard"
+			},
+			{
+				"command": "piiGuard.disableFileVault",
+				"title": "このファイルのFile Vaultを消去する",
+				"category": "PII Guard"
+			},
+			{
+				"command": "piiGuard.fileVaultStatus",
+				"title": "このファイルのFile Vault状態を確かめる",
+				"category": "PII Guard"
+			},
+			{
 				"command": "piiGuard.addToDictionary",
 				"title": "選んだ語を辞書へ足す",
 				"category": "PII Guard"
@@ -341,6 +356,18 @@
 				{
 					"command": "piiGuard.restoreFile",
 					"group": "1_mask@3"
+				},
+				{
+					"command": "piiGuard.enableFileVault",
+					"group": "3_vault@1"
+				},
+				{
+					"command": "piiGuard.disableFileVault",
+					"group": "3_vault@2"
+				},
+				{
+					"command": "piiGuard.fileVaultStatus",
+					"group": "3_vault@3"
 				},
 				{
 					"command": "piiGuard.addToDictionary",

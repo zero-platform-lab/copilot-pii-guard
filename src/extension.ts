@@ -10,6 +10,7 @@ import { checkSecretsInActiveEditor, maskSecretsInActiveEditor, restoreSecretsIn
 import { addSelectionToDictionary, exportDictionary } from "./pii/dictionaryEditor"
 import { sessionVault } from "./pii/maskConversation"
 import { clearSessionVault } from "./pii/sessionVaultEditor"
+import { FileVaultController } from "./pii/fileVault"
 import { createHandler } from "./participant"
 import { readSettings } from "./settings"
 import { fetchModelCommand, showModelStatus } from "./model"
@@ -29,6 +30,7 @@ function piiMasker(): TaskPiiMasker {
 }
 
 export function activate(context: vscode.ExtensionContext): void {
+	const fileVault = new FileVaultController(context)
 	const participant = vscode.chat.createChatParticipant(
 		"pii-guard.mask",
 		createHandler({
@@ -45,15 +47,24 @@ export function activate(context: vscode.ExtensionContext): void {
 		vscode.commands.registerCommand("piiGuard.checkFile", () =>
 			checkSecretsInActiveEditor(readSettings(), (texts) => piiMasker().properNounsFor(texts)),
 		),
-		vscode.commands.registerCommand("piiGuard.maskFile", () =>
-			maskSecretsInActiveEditor(readSettings(), sessionVault(), (texts) =>
-				piiMasker().properNounsFor(texts),
-			),
-		),
+		vscode.commands.registerCommand("piiGuard.maskFile", async () => {
+			const vault = sessionVault()
+			const uri = vscode.window.activeTextEditor?.document.uri
+			if (uri && !(await fileVault.prepare(uri, vault))) return
+			await maskSecretsInActiveEditor(
+				readSettings(),
+				vault,
+				(texts) => piiMasker().properNounsFor(texts),
+				(uri, entries) => fileVault.record(uri, entries),
+			)
+		}),
 		vscode.commands.registerCommand("piiGuard.restoreFile", () =>
-			restoreSecretsInActiveEditor((text) => sessionVault().restore(text)),
+			restoreSecretsInActiveEditor((text, uri) => fileVault.restore(uri, text, (one) => sessionVault().restore(one))),
 		),
 		vscode.commands.registerCommand("piiGuard.clearSessionVault", clearSessionVault),
+		vscode.commands.registerCommand("piiGuard.enableFileVault", () => fileVault.enable(sessionVault())),
+		vscode.commands.registerCommand("piiGuard.disableFileVault", () => fileVault.disable()),
+		vscode.commands.registerCommand("piiGuard.fileVaultStatus", () => fileVault.status()),
 		vscode.commands.registerCommand("piiGuard.addToDictionary", () =>
 			addSelectionToDictionary(readSettings()),
 		),

@@ -114,7 +114,9 @@ export async function checkSecretsInActiveEditor(
  * 割り当てた伏せ字だけ**で（`FR-PII-20a`）、タスクが終われば対応表は消える
  * （`FR-PII-20b`）。対応表をディスクへ書かない以上、そこは避けられない。
  */
-export async function restoreSecretsInActiveEditor(unmask: ((text: string) => string) | undefined): Promise<void> {
+export async function restoreSecretsInActiveEditor(
+	unmask: ((text: string, uri: vscode.Uri) => string | Promise<string>) | undefined,
+): Promise<void> {
 	const editor = vscode.window.activeTextEditor
 	if (!editor) {
 		await vscode.window.showInformationMessage(t("common:pii.noEditor"))
@@ -128,7 +130,13 @@ export async function restoreSecretsInActiveEditor(unmask: ((text: string) => st
 	}
 
 	const text = editor.document.getText()
-	const restored = unmask(text)
+	let restored: string
+	try {
+		restored = await unmask(text, editor.document.uri)
+	} catch {
+		await vscode.window.showErrorMessage(t("common:pii.fileVault.failed"))
+		return
+	}
 	if (restored === text) {
 		await vscode.window.showInformationMessage(t("common:pii.nothingToRestore"))
 		return
@@ -169,6 +177,8 @@ export async function maskSecretsInActiveEditor(
 	 * 渡すので、取りこぼしがそのまま外へ出る。
 	 */
 	properNounsFor?: (texts: readonly string[]) => Promise<MaskOptions["properNouns"]>,
+	/** File Vaultが有効なファイルだけ、適用後の対応を暗号化保存する。 */
+	persist?: (uri: vscode.Uri, entries: readonly (readonly [string, string])[]) => Promise<void>,
 ): Promise<void> {
 	const inspected = await inspectActiveEditor(settings, properNounsFor)
 	if (!inspected) return
@@ -204,19 +214,28 @@ export async function maskSecretsInActiveEditor(
 	// 消費されるが、同じ値には同じ伏せ字が当たるので、指す先が食い違うことは無い。
 	// 渡されなければ 1 回限りの割り当てにする。`planMasking` と同じ扱いである。
 	const own = allocator ?? createAllocator()
+	const assigned: (readonly [string, string])[] = []
 
 	const workspaceEdit = new vscode.WorkspaceEdit()
 	for (const match of matches) {
+		const placeholder = own.assign(match.kind, match.value)
+		assigned.push([placeholder, match.value])
 		workspaceEdit.replace(
 			document.uri,
 			new vscode.Range(document.positionAt(match.start), document.positionAt(match.end)),
-			own.assign(match.kind, match.value),
+			placeholder,
 		)
 	}
 
 	if (!(await vscode.workspace.applyEdit(workspaceEdit))) {
 		await vscode.window.showErrorMessage(t("common:pii.replaceFailed"))
 		return
+	}
+
+	try {
+		await persist?.(document.uri, assigned)
+	} catch {
+		await vscode.window.showErrorMessage(t("common:pii.fileVault.saveFailed"))
 	}
 
 	await vscode.window.showInformationMessage(t("common:pii.replaced", { summary: describeCounts(counts) }))

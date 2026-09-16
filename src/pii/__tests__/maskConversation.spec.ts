@@ -279,6 +279,29 @@ describe("PiiVault", () => {
 		expect(next.messages[0]).toMatchObject({ content: "{{email-002}}" })
 		expect(vault.restore("{{email-002}}")).toBe("taro@corp.example")
 	})
+
+	it("File Vaultの番号を保ったまま取り込む", () => {
+		const vault = new PiiVault()
+
+		const remapped = vault.importEntries([["{{email-005}}", "alice@corp.example"]])
+		const next = maskConversation("", [message("user", "bob@corp.example")], { kinds: ["email"] }, vault)
+
+		expect(remapped.get("{{email-005}}")).toBe("{{email-005}}")
+		expect(vault.restore("{{email-005}}")).toBe("alice@corp.example")
+		expect(next.messages[0]).toMatchObject({ content: "{{email-006}}" })
+	})
+
+	it("Session Vaultと同じ番号が別の値なら再割当する", () => {
+		const vault = new PiiVault()
+		maskConversation("", [message("user", "bob@corp.example")], { kinds: ["email"] }, vault)
+
+		const remapped = vault.importEntries([["{{email-001}}", "alice@corp.example"]])
+
+		expect(remapped.get("{{email-001}}")).toBe("{{email-002}}")
+		expect(vault.restore("{{email-001}} / {{email-002}}")).toBe(
+			"bob@corp.example / alice@corp.example",
+		)
+	})
 })
 
 describe("collectTexts が maskConversation と同じ本文を見る（FR-PII-21）", () => {

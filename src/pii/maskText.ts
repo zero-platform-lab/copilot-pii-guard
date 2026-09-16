@@ -101,6 +101,8 @@ export type PlaceholderAllocator = {
 type MutablePlaceholderAllocator = PlaceholderAllocator & {
 	/** 割り当てを捨てる。番号は再利用しない。 */
 	remove: (placeholder: string) => boolean
+	/** 保存済みの伏せ字を、空いていれば同じ番号のまま取り込む。 */
+	reserve: (kind: PiiKind, value: string, placeholder: string) => string
 }
 
 /** 1 回の置き換えだけで使う割り当て係。要求をまたがない用途に使う。 */
@@ -120,6 +122,21 @@ export function createAllocator(): MutablePlaceholderAllocator {
 			const index = (next.get(kind) ?? 0) + 1
 			next.set(kind, index)
 			const placeholder = placeholderFor(kind, index)
+			assigned.set(key, placeholder)
+			assignmentKeys.set(placeholder, key)
+			table.set(placeholder, value)
+			return placeholder
+		},
+		reserve(kind, value, placeholder) {
+			const key = `${kind} ${value}`
+			const existing = assigned.get(key)
+			if (existing !== undefined) return existing
+			const occupied = table.get(placeholder)
+			if (occupied !== undefined) return this.assign(kind, value)
+
+			const match = /^\{\{[a-z]+-(\d{3,})\}\}$/.exec(placeholder)
+			if (!match) return this.assign(kind, value)
+			next.set(kind, Math.max(next.get(kind) ?? 0, Number(match[1])))
 			assigned.set(key, placeholder)
 			assignmentKeys.set(placeholder, key)
 			table.set(placeholder, value)
