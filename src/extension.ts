@@ -12,6 +12,7 @@ import { PiiVaultLimitError, sessionVault } from "./pii/maskConversation"
 import { clearSessionVault } from "./pii/sessionVaultEditor"
 import { FileVaultController } from "./pii/fileVault"
 import { createHandler } from "./participant"
+import { disposeFileToolPreviews } from "./fileTools"
 import { readSettings } from "./settings"
 import { fetchModelCommand, showModelStatus } from "./model"
 import { t } from "./messages"
@@ -30,6 +31,7 @@ function piiMasker(): TaskPiiMasker {
 }
 
 export function activate(context: vscode.ExtensionContext): void {
+	context.subscriptions.push({ dispose: disposeFileToolPreviews })
 	const fileVault = new FileVaultController(context)
 	context.subscriptions.push(...fileVault.start())
 	const participant = vscode.chat.createChatParticipant(

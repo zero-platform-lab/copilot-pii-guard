@@ -1,6 +1,6 @@
 // npx vitest run src/__tests__/fileTools.spec.ts
 
-import { FILE_TOOLS, FILE_TOOL_ACCESS, runFileTool, type FileToolHost } from "../fileTools"
+import { FILE_TOOLS, FILE_TOOL_ACCESS, runFileTool, writeRevisionMatches, type FileToolHost } from "../fileTools"
 import { TaskPiiMasker } from "../pii/TaskPiiMasker"
 import { resetSessionVault } from "../pii/maskConversation"
 import { unmaskText } from "../pii/maskText"
@@ -229,6 +229,34 @@ describe("PII Guardのファイル道具", () => {
 
 		expect(writeFile).not.toHaveBeenCalled()
 		expect(result).toContain("取り消しました")
+	})
+
+	it("確認した差分の識別情報を、同じ書込へ渡す", async () => {
+		const approval = { revision: { existed: true, version: 3, text: "旧本文" } }
+		const confirmWrite = vi.fn(async () => approval)
+		const writeFile = vi.fn(async () => {})
+		const masker = new TaskPiiMasker({ enabled: true } as never)
+
+		await runFileTool(
+			"pii_guard_write_file",
+			{ path: "answer.txt", content: "新本文" },
+			masker,
+			{ restoreWrites: false, token, host: fakeHost({ confirmWrite, writeFile }) },
+		)
+
+		expect(confirmWrite).toHaveBeenCalledExactlyOnceWith("answer.txt", false, "新本文")
+		expect(writeFile).toHaveBeenCalledExactlyOnceWith("answer.txt", "新本文", approval)
+	})
+
+	it("確認後に既存本文・文書版・新規ファイル状態が変わったら競合と判定する", () => {
+		const same = { version: 3, getText: () => "旧本文" }
+		const revision = { existed: true, version: 3, text: "旧本文", stamp: "10:20" }
+		expect(writeRevisionMatches(revision, same as never, "10:20")).toBe(true)
+		expect(writeRevisionMatches({ ...revision, version: 2 }, same as never, "10:20")).toBe(false)
+		expect(writeRevisionMatches({ ...revision, text: "別本文" }, same as never, "10:20")).toBe(false)
+		expect(writeRevisionMatches(revision, same as never, "11:20")).toBe(false)
+		expect(writeRevisionMatches({ existed: false }, undefined)).toBe(true)
+		expect(writeRevisionMatches({ existed: false }, same as never)).toBe(false)
 	})
 
 	it("検索結果も伏せて返す", async () => {
