@@ -129,6 +129,92 @@ describe("伏せてから Copilot へ送る", () => {
 		expect(out.parts.join("")).toContain("参照した本文 3 件")
 	})
 
+	it("添付ファイルと選択範囲のFile Vaultを一度だけ取り込み、衝突した番号を直す", async () => {
+		const fake = fakeModel(["{{email-002}}へ返します"])
+		const out = fakeStream()
+		const masker = new TaskPiiMasker({ enabled: true } as never)
+		masker.allocator.importEntries([["{{email-001}}", "bob@corp.example"]])
+		const prepareReferenceVault = vi.fn(async (_uri: unknown, active: TaskPiiMasker) => {
+			const remapped = active.allocator.importEntries([["{{email-001}}", "alice@corp.example"]])
+			return (text: string) => {
+				let replaced = text
+				for (const [from, to] of remapped) replaced = replaced.replaceAll(from, to)
+				return replaced
+			}
+		})
+		const handler = createHandler({
+			masker: () => masker,
+			isEnabled: () => true,
+			selectModel: async () => fake.model as never,
+			openTextDocument: async () => ({ getText: () => "連絡先は {{email-001}}" }) as never,
+			prepareReferenceVault,
+		})
+		const uri = { scheme: "file", authority: "", path: "/work/customer.txt", query: "" }
+
+		await handler(
+			{
+				prompt: "参照を確認して",
+				references: [{ value: uri }, { value: { uri, range: {} } }],
+			} as never,
+			{ history: [] } as never,
+			out.stream as never,
+			{} as never,
+		)
+
+		const sent = fake.seen.join("")
+		expect(prepareReferenceVault).toHaveBeenCalledTimes(1)
+		expect(sent).toContain("{{email-002}}")
+		expect(sent).not.toContain("連絡先は {{email-001}}")
+		expect(out.parts.join("")).toContain("alice@corp.exampleへ返します")
+	})
+
+	it("File Vaultを準備できない参照は送らず、理由を表示する", async () => {
+		const fake = fakeModel(["はい"])
+		const out = fakeStream()
+		const handler = createHandler({
+			masker: () => new TaskPiiMasker({ enabled: true } as never),
+			isEnabled: () => true,
+			selectModel: async () => fake.model as never,
+			openTextDocument: async () => ({ getText: () => "機密 {{email-001}}" }) as never,
+			prepareReferenceVault: async () => Promise.reject(new Error("broken vault")),
+		})
+		const uri = { scheme: "file", path: "/work/private.txt" }
+
+		await handler(
+			{ prompt: "確認して", references: [{ value: uri }] } as never,
+			{ history: [] } as never,
+			out.stream as never,
+			{} as never,
+		)
+
+		expect(fake.seen.join("")).not.toContain("{{email-001}}")
+		expect(out.parts.join("")).toContain("読み込めなかった参照は送信しませんでした")
+		expect(out.parts.join("")).toContain("/work/private.txt")
+	})
+
+	it("伏せ字化が切ならFile Vaultを準備せず、参照本文をそのまま送る", async () => {
+		const fake = fakeModel(["はい"])
+		const prepareReferenceVault = vi.fn(async () => Promise.reject(new Error("broken vault")))
+		const handler = createHandler({
+			masker: () => new TaskPiiMasker({ enabled: false } as never),
+			isEnabled: () => false,
+			selectModel: async () => fake.model as never,
+			openTextDocument: async () => ({ getText: () => "連絡先は alice@corp.example" }) as never,
+			prepareReferenceVault,
+		})
+		const uri = { scheme: "file", path: "/work/customer.txt" }
+
+		await handler(
+			{ prompt: "確認して", references: [{ value: uri }] } as never,
+			{ history: [] } as never,
+			fakeStream().stream as never,
+			{} as never,
+		)
+
+		expect(prepareReferenceVault).not.toHaveBeenCalled()
+		expect(fake.seen.join("")).toContain("alice@corp.example")
+	})
+
 	it("読めない参照は送らず、理由を表示する", async () => {
 		const fake = fakeModel(["はい"])
 		const out = fakeStream()
