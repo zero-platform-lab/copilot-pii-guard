@@ -119,11 +119,13 @@ Copilotへ渡します。読んだ本文、検索結果、ファイル名は、�
 | このファイルのFile Vaultを消去する | 暗号化した対応表を消去し、永続化を無効にする |
 | このファイルのFile Vault状態を確かめる | 有効・無効と保存している対応数を表示する |
 
-`Ctrl+Shift+P` からは、さらに 4 つ実行できる。
+`Ctrl+Shift+P` からは、さらにFile Vaultの一括消去を含む操作を実行できる。
 
 | 項目 | 何をするか |
 | --- | --- |
 | PII Guard: Session Vaultを消去する | 現在のセッションで保持している伏せ字対応を、確認後にすべて消去する |
+| PII Guard: 選んだFile Vaultを消去する | 一覧から選んだ複数ファイルの対応を確認後に消去する |
+| PII Guard: すべてのFile Vaultを消去する | ワークスペースの全File Vaultを確認後に消去する |
 | PII Guard: 辞書を書き出す | 設定と辞書に散らばった語を 1 つにまとめて書き出す |
 | PII Guard: モデルの置き場所を確かめる | どこを見ていて、置かれているかを出す |
 | PII Guard: モデルを取得する | 取得先からモデルを取る（取得先を書いていなければ断る） |
@@ -149,6 +151,9 @@ VS Code の設定で `piiGuard` を検索する。
 | `piiGuard.fileWrites.restore` | オフ | Write Restoreモード。ファイル道具が書く直前に元の値へ戻すか |
 | `piiGuard.fileTools.mode` | `confirmEdit` | ファイル道具を使わない、読取専用、確認付き編集のどれにするか |
 | `piiGuard.fileVault.retentionDays` | `30` | File Vaultを最終利用から保持する日数。`0` は時間による期限なし |
+| `piiGuard.fileVault.maxFiles` | `100` | File Vaultを有効にできるファイル数の上限 |
+| `piiGuard.fileVault.maxEntriesPerFile` | `1000` | 1ファイルに保存できる対応数の上限 |
+| `piiGuard.fileVault.maxBytes` | `5242880` | File Vault全体の暗号化前データ量の上限（バイト） |
 | `piiGuard.terms` | 空 | 必ず伏せたい語。登録した語は完全一致で検出します |
 | `piiGuard.dictionaryPaths` | 空 | 辞書ファイルの場所。空なら `~/.agent/pii-dictionary.txt` |
 | `piiGuard.properNouns.enabled` | オフ | 固有名詞検出を使うか |

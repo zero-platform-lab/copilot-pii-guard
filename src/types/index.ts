@@ -36,6 +36,9 @@ export type PiiMasking = {
 	fileVault?: {
 		/** 最終利用からの保持日数。0 は時間による期限なし。 */
 		retentionDays?: number
+		maxFiles?: number
+		maxEntriesPerFile?: number
+		maxBytes?: number
 	}
 	/** 伏せる種類。省略すると全部。 */
 	kinds?: PiiKind[]

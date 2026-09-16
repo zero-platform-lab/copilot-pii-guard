@@ -4,7 +4,13 @@ import * as vscode from "vscode"
 
 import { t } from "../messages"
 
-import { FileVaultError, FileVaultStore, type FileVaultEntry } from "./fileVaultStore"
+import {
+	DEFAULT_FILE_VAULT_LIMITS,
+	FileVaultError,
+	FileVaultStore,
+	type FileVaultEntry,
+	type FileVaultLimits,
+} from "./fileVaultStore"
 import { PiiVault } from "./maskConversation"
 import { unmaskText } from "./maskText"
 
@@ -36,11 +42,35 @@ function retentionDays(): number {
 	return Number.isInteger(value) && value >= 0 ? value : DEFAULT_RETENTION_DAYS
 }
 
+function positiveInteger(value: unknown, fallback: number): number {
+	return Number.isInteger(value) && Number(value) > 0 ? Number(value) : fallback
+}
+
+function fileVaultLimits(): FileVaultLimits {
+	const config = vscode.workspace.getConfiguration("piiGuard")
+	return {
+		maxFiles: positiveInteger(config.get("fileVault.maxFiles"), DEFAULT_FILE_VAULT_LIMITS.maxFiles),
+		maxEntriesPerFile: positiveInteger(
+			config.get("fileVault.maxEntriesPerFile"),
+			DEFAULT_FILE_VAULT_LIMITS.maxEntriesPerFile,
+		),
+		maxBytes: positiveInteger(config.get("fileVault.maxBytes"), DEFAULT_FILE_VAULT_LIMITS.maxBytes),
+	}
+}
+
 function uriForIdentity(identity: string): vscode.Uri | undefined {
 	const match = /^(\d+):(.+)$/.exec(identity)
 	if (!match) return undefined
 	const folder = vscode.workspace.workspaceFolders?.[Number(match[1])]
 	return folder ? vscode.Uri.joinPath(folder.uri, ...match[2].split("/")) : undefined
+}
+
+function labelForIdentity(identity: string): string {
+	const match = /^(\d+):(.+)$/.exec(identity)
+	if (!match) return identity
+	const folders = vscode.workspace.workspaceFolders ?? []
+	const folder = folders[Number(match[1])]
+	return folders.length > 1 && folder ? `${folder.name}/${match[2]}` : match[2]
 }
 
 /** 利用者操作と暗号化ストアの境界。モデルからは呼ばない。 */
@@ -52,7 +82,9 @@ export class FileVaultController {
 			secrets: Pick<vscode.SecretStorage, "get" | "store">
 		},
 	) {
-		this.store = context.storageUri ? new FileVaultStore(context.storageUri, context.secrets) : undefined
+		this.store = context.storageUri
+			? new FileVaultStore(context.storageUri, context.secrets, undefined, undefined, fileVaultLimits)
+			: undefined
 	}
 
 	/** 起動時の掃除と、VS Codeが通知する移動・削除への追従を開始する。 */
@@ -204,11 +236,99 @@ export class FileVaultController {
 		}
 	}
 
+	async clearSelected(): Promise<void> {
+		if (!this.store) {
+			await vscode.window.showWarningMessage(t("common:pii.fileVault.workspaceRequired"))
+			return
+		}
+		try {
+			await this.cleanup()
+			const records = await this.store.list()
+			if (records.length === 0) {
+				await vscode.window.showInformationMessage(t("common:pii.fileVault.none"))
+				return
+			}
+			const items = records.map((record) => ({
+				label: labelForIdentity(record.identity),
+				description: t("common:pii.fileVault.entryCount", { count: record.entries.length }),
+				identity: record.identity,
+				count: record.entries.length,
+			}))
+			const selected = await vscode.window.showQuickPick(items, {
+				canPickMany: true,
+				placeHolder: t("common:pii.fileVault.pickClear"),
+			})
+			if (!selected || selected.length === 0) return
+			await this.confirmAndDelete(selected)
+		} catch (error) {
+			await vscode.window.showErrorMessage(errorMessage(error))
+		}
+	}
+
+	async clearAll(vault?: PiiVault): Promise<void> {
+		if (!this.store) {
+			await vscode.window.showWarningMessage(t("common:pii.fileVault.workspaceRequired"))
+			return
+		}
+		try {
+			await this.cleanup()
+			const records = await this.store.list()
+			if (records.length === 0 && (!vault || vault.size === 0)) {
+				await vscode.window.showInformationMessage(t("common:pii.fileVault.none"))
+				return
+			}
+			const fileEntries = records.reduce((sum, record) => sum + record.entries.length, 0)
+			const sessionEntries = vault?.size ?? 0
+			const confirm = t("common:pii.clearVault")
+			const answer = await vscode.window.showWarningMessage(
+				t("common:pii.fileVault.confirmClearAll", {
+					files: records.length,
+					fileCount: fileEntries,
+					sessionCount: sessionEntries,
+				}),
+				{ modal: true },
+				confirm,
+			)
+			if (answer !== confirm) return
+			const removed = await this.store.deleteMany(records.map((record) => record.identity))
+			const clearedSession = vault?.clearSnapshot([...vault.entries.keys()]) ?? 0
+			await vscode.window.showInformationMessage(
+				t("common:pii.fileVault.clearedAll", {
+					files: removed.files,
+					fileCount: removed.entries,
+					sessionCount: clearedSession,
+				}),
+			)
+		} catch (error) {
+			await vscode.window.showErrorMessage(errorMessage(error))
+		}
+	}
+
+	private async confirmAndDelete(selected: readonly { identity: string; count: number }[]): Promise<void> {
+		if (!this.store) return
+		const entries = selected.reduce((sum, item) => sum + item.count, 0)
+		const confirm = t("common:pii.clearVault")
+		const answer = await vscode.window.showWarningMessage(
+			t("common:pii.fileVault.confirmClearMany", { files: selected.length, count: entries }),
+			{ modal: true },
+			confirm,
+		)
+		if (answer !== confirm) return
+		const removed = await this.store.deleteMany(selected.map((item) => item.identity))
+		await vscode.window.showInformationMessage(
+			t("common:pii.fileVault.clearedMany", { files: removed.files, count: removed.entries }),
+		)
+	}
+
 	async record(uri: vscode.Uri, entries: readonly FileVaultEntry[]): Promise<void> {
 		const identity = fileVaultIdentity(uri)
 		if (!identity || !this.store) return
-		await this.cleanup()
-		await this.store.appendIfEnabled(identity, entries)
+		try {
+			await this.cleanup()
+			await this.store.appendIfEnabled(identity, entries)
+		} catch (error) {
+			await vscode.window.showErrorMessage(errorMessage(error))
+		}
 	}
 
 	/** 伏せ字を新しく割り当てる前に、保存済み番号をSession Vaultへ予約する。 */

@@ -81,6 +81,16 @@ describe("チェックの形を、名前の並びへ変える", () => {
 	it("File Vaultの保持日数を読む", () => {
 		expect(withConfig({ "fileVault.retentionDays": 30 }).fileVault?.retentionDays).toBe(30)
 	})
+
+	it("File Vaultの容量上限を読む", () => {
+		expect(
+			withConfig({
+				"fileVault.maxFiles": 100,
+				"fileVault.maxEntriesPerFile": 1000,
+				"fileVault.maxBytes": 5_242_880,
+			}).fileVault,
+		).toMatchObject({ maxFiles: 100, maxEntriesPerFile: 1000, maxBytes: 5_242_880 })
+	})
 })
 
 describe("package.json と食い違わない", () => {

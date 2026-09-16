@@ -7,6 +7,18 @@ const KEY_NAME = "piiGuard.fileVault.masterKey.v1"
 const AAD = Buffer.from("copilot-pii-guard:file-vault:v1", "utf8")
 const FILE_NAME = "file-vault.v1.json"
 
+export const DEFAULT_FILE_VAULT_LIMITS = {
+	maxFiles: 100,
+	maxEntriesPerFile: 1_000,
+	maxBytes: 5 * 1024 * 1024,
+} as const
+
+export type FileVaultLimits = {
+	maxFiles: number
+	maxEntriesPerFile: number
+	maxBytes: number
+}
+
 export type FileVaultEntry = readonly [placeholder: string, value: string]
 
 type StoredFile = {
@@ -37,7 +49,16 @@ export type FileVaultPruneResult = {
 }
 
 export class FileVaultError extends Error {
-	constructor(public readonly code: "missingKey" | "corrupt" | "unsupported", cause?: unknown) {
+	constructor(
+		public readonly code:
+			| "missingKey"
+			| "corrupt"
+			| "unsupported"
+			| "maxFiles"
+			| "maxEntries"
+			| "maxBytes",
+		cause?: unknown,
+	) {
 		super(code, { cause })
 		this.name = "FileVaultError"
 	}
@@ -144,8 +165,21 @@ export class FileVaultStore {
 			"readFile" | "writeFile" | "createDirectory" | "rename" | "delete"
 		> = vscode.workspace.fs,
 		private readonly now: () => Date = () => new Date(),
+		private readonly limits: () => FileVaultLimits = () => DEFAULT_FILE_VAULT_LIMITS,
 	) {
 		this.target = vscode.Uri.joinPath(root, FILE_NAME)
+	}
+
+	private assertLimits(catalog: Catalog): void {
+		const limits = this.limits()
+		const records = Object.values(catalog.files)
+		if (records.length > limits.maxFiles) throw new FileVaultError("maxFiles")
+		if (records.some((record) => record.entries.length > limits.maxEntriesPerFile)) {
+			throw new FileVaultError("maxEntries")
+		}
+		if (Buffer.byteLength(JSON.stringify(catalog), "utf8") > limits.maxBytes) {
+			throw new FileVaultError("maxBytes")
+		}
 	}
 
 	private exclusive<T>(operation: () => Promise<T>): Promise<T> {
@@ -198,6 +232,10 @@ export class FileVaultStore {
 		return this.exclusive(async () => (await this.read()).catalog.files[identity])
 	}
 
+	list(): Promise<FileVaultRecord[]> {
+		return this.exclusive(async () => Object.values((await this.read()).catalog.files))
+	}
+
 	load(identity: string): Promise<FileVaultRecord | undefined> {
 		return this.exclusive(async () => {
 			const { catalog, exists } = await this.read()
@@ -223,6 +261,7 @@ export class FileVaultStore {
 				entries: [...merged],
 			}
 			catalog.files[identity] = record
+			this.assertLimits(catalog)
 			await this.write(catalog, exists)
 			return record
 		})
@@ -237,6 +276,7 @@ export class FileVaultStore {
 			for (const [placeholder, value] of entries) merged.set(placeholder, value)
 			record.entries = [...merged]
 			record.lastUsedAt = this.now().toISOString()
+			this.assertLimits(catalog)
 			await this.write(catalog, exists)
 			return true
 		})
@@ -250,6 +290,21 @@ export class FileVaultStore {
 			delete catalog.files[identity]
 			await this.write(catalog, exists)
 			return count
+		})
+	}
+
+	deleteMany(identities: readonly string[]): Promise<{ files: number; entries: number }> {
+		return this.exclusive(async () => {
+			const { catalog, exists } = await this.read()
+			const wanted = new Set(identities)
+			const targets = Object.entries(catalog.files).filter(([identity]) => wanted.has(identity))
+			if (targets.length === 0) return { files: 0, entries: 0 }
+			for (const [identity] of targets) delete catalog.files[identity]
+			await this.write(catalog, exists)
+			return {
+				files: targets.length,
+				entries: targets.reduce((sum, [, record]) => sum + record.entries.length, 0),
+			}
 		})
 	}
 
@@ -274,6 +329,7 @@ export class FileVaultStore {
 					lastUsedAt: timestamp,
 				}
 			}
+			this.assertLimits(catalog)
 			await this.write(catalog, exists)
 			return moved.length
 		})

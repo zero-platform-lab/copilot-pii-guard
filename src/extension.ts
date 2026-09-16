@@ -66,6 +66,8 @@ export function activate(context: vscode.ExtensionContext): void {
 		vscode.commands.registerCommand("piiGuard.enableFileVault", () => fileVault.enable(sessionVault())),
 		vscode.commands.registerCommand("piiGuard.disableFileVault", () => fileVault.disable()),
 		vscode.commands.registerCommand("piiGuard.fileVaultStatus", () => fileVault.status()),
+		vscode.commands.registerCommand("piiGuard.clearSelectedFileVaults", () => fileVault.clearSelected()),
+		vscode.commands.registerCommand("piiGuard.clearAllFileVaults", () => fileVault.clearAll(sessionVault())),
 		vscode.commands.registerCommand("piiGuard.addToDictionary", () =>
 			addSelectionToDictionary(readSettings()),
 		),

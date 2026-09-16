@@ -14,6 +14,7 @@ const mocks = vi.hoisted(() => {
 		showInformationMessage: vi.fn(async (..._args: unknown[]) => undefined as unknown),
 		showWarningMessage: vi.fn(async (..._args: unknown[]) => undefined as unknown),
 		showErrorMessage: vi.fn(async (..._args: unknown[]) => undefined as unknown),
+		showQuickPick: vi.fn(async (..._args: unknown[]) => undefined as unknown),
 	}
 })
 
@@ -25,6 +26,7 @@ vi.mock("vscode", () => ({
 		showInformationMessage: mocks.showInformationMessage,
 		showWarningMessage: mocks.showWarningMessage,
 		showErrorMessage: mocks.showErrorMessage,
+		showQuickPick: mocks.showQuickPick,
 	},
 	workspace: {
 		getConfiguration: () => ({ get: (_key: string, fallback: unknown) => fallback }),
@@ -188,5 +190,35 @@ describe("FileVaultController", () => {
 				"{{email-005}}",
 			)
 		})
+	})
+
+	it("一覧から選んだFile Vaultだけを確認後に消去する", async () => {
+		const controller = new FileVaultController(context())
+		const first = new PiiVault()
+		first.importEntries([["{{email-005}}", "alice@corp.example"]])
+		mocks.showWarningMessage.mockResolvedValueOnce("common:pii.fileVault.enable")
+		await controller.enable(first)
+
+		mocks.activeTextEditor = {
+			document: { uri: uri("/w/other.md"), getText: () => "{{email-006}}" },
+		}
+		const second = new PiiVault()
+		second.importEntries([["{{email-006}}", "bob@corp.example"]])
+		mocks.showWarningMessage.mockResolvedValueOnce("common:pii.fileVault.enable")
+		await controller.enable(second)
+
+		mocks.showQuickPick.mockImplementationOnce(async (value: unknown) => {
+			const items = value as { label: string }[]
+			return items.filter((item) => item.label === "note.md")
+		})
+		mocks.showWarningMessage.mockResolvedValueOnce("common:pii.clearVault")
+		await controller.clearSelected()
+
+		expect(await controller.restore(uri("/w/note.md"), "{{email-005}}", (text) => text)).toBe(
+			"{{email-005}}",
+		)
+		expect(await controller.restore(uri("/w/other.md"), "{{email-006}}", (text) => text)).toBe(
+			"bob@corp.example",
+		)
 	})
 })
