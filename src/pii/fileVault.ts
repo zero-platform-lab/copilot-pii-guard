@@ -42,19 +42,19 @@ function retentionDays(): number {
 	return Number.isInteger(value) && value >= 0 ? value : DEFAULT_RETENTION_DAYS
 }
 
-function positiveInteger(value: unknown, fallback: number): number {
-	return Number.isInteger(value) && Number(value) > 0 ? Number(value) : fallback
+function nonNegativeInteger(value: unknown, fallback: number): number {
+	return Number.isInteger(value) && Number(value) >= 0 ? Number(value) : fallback
 }
 
 function fileVaultLimits(): FileVaultLimits {
 	const config = vscode.workspace.getConfiguration("piiGuard")
 	return {
-		maxFiles: positiveInteger(config.get("fileVault.maxFiles"), DEFAULT_FILE_VAULT_LIMITS.maxFiles),
-		maxEntriesPerFile: positiveInteger(
+		maxFiles: nonNegativeInteger(config.get("fileVault.maxFiles"), DEFAULT_FILE_VAULT_LIMITS.maxFiles),
+		maxEntriesPerFile: nonNegativeInteger(
 			config.get("fileVault.maxEntriesPerFile"),
 			DEFAULT_FILE_VAULT_LIMITS.maxEntriesPerFile,
 		),
-		maxBytes: positiveInteger(config.get("fileVault.maxBytes"), DEFAULT_FILE_VAULT_LIMITS.maxBytes),
+		maxBytes: nonNegativeInteger(config.get("fileVault.maxBytes"), DEFAULT_FILE_VAULT_LIMITS.maxBytes),
 	}
 }
 

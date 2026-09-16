@@ -71,23 +71,23 @@
 				"piiGuard.fileVault.maxFiles": {
 					"type": "integer",
 					"default": 100,
-					"minimum": 1,
+					"minimum": 0,
 					"maximum": 10000,
-					"description": "File Vaultを有効にできるファイル数の上限です。"
+					"markdownDescription": "File Vaultを有効にできるファイル数の上限です。`0` は無制限です。"
 				},
 				"piiGuard.fileVault.maxEntriesPerFile": {
 					"type": "integer",
 					"default": 1000,
-					"minimum": 1,
+					"minimum": 0,
 					"maximum": 100000,
-					"description": "1ファイルのFile Vaultへ保存できる対応数の上限です。"
+					"markdownDescription": "1ファイルのFile Vaultへ保存できる対応数の上限です。`0` は無制限です。"
 				},
 				"piiGuard.fileVault.maxBytes": {
 					"type": "integer",
 					"default": 5242880,
-					"minimum": 1024,
+					"minimum": 0,
 					"maximum": 104857600,
-					"description": "File Vault全体の暗号化前データ量の上限（バイト）です。"
+					"markdownDescription": "File Vault全体の暗号化前データ量の上限（バイト）です。`0` は無制限です。"
 				},
 				"piiGuard.kinds": {
 					"type": "object",

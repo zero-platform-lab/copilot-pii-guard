@@ -239,4 +239,23 @@ describe("FileVaultStore", () => {
 		).rejects.toMatchObject({ code: "maxBytes" })
 		expect(memory.files.has(target)).toBe(false)
 	})
+
+	it("上限が0ならファイル数・対応数・全体容量を制限しない", async () => {
+		const memory = memoryFileSystem()
+		const secret = secretStorage()
+		const store = new FileVaultStore(root(), secret.secrets, memory.fs as never, undefined, () => ({
+			maxFiles: 0,
+			maxEntriesPerFile: 0,
+			maxBytes: 0,
+		}))
+
+		await store.enable("0:a.md", [
+			["{{email-001}}", "a".repeat(300)],
+			["{{email-002}}", "b".repeat(300)],
+		])
+		await store.enable("0:b.md", [["{{email-003}}", "c".repeat(300)]])
+
+		expect((await store.inspect("0:a.md"))?.entries).toHaveLength(2)
+		expect(await store.inspect("0:b.md")).toBeDefined()
+	})
 })

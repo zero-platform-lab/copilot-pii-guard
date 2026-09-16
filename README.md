@@ -151,9 +151,9 @@ VS Code の設定で `piiGuard` を検索する。
 | `piiGuard.fileWrites.restore` | オフ | Write Restoreモード。ファイル道具が書く直前に元の値へ戻すか |
 | `piiGuard.fileTools.mode` | `confirmEdit` | ファイル道具を使わない、読取専用、確認付き編集のどれにするか |
 | `piiGuard.fileVault.retentionDays` | `30` | File Vaultを最終利用から保持する日数。`0` は時間による期限なし |
-| `piiGuard.fileVault.maxFiles` | `100` | File Vaultを有効にできるファイル数の上限 |
-| `piiGuard.fileVault.maxEntriesPerFile` | `1000` | 1ファイルに保存できる対応数の上限 |
-| `piiGuard.fileVault.maxBytes` | `5242880` | File Vault全体の暗号化前データ量の上限（バイト） |
+| `piiGuard.fileVault.maxFiles` | `100` | File Vaultを有効にできるファイル数の上限。`0` は無制限 |
+| `piiGuard.fileVault.maxEntriesPerFile` | `1000` | 1ファイルに保存できる対応数の上限。`0` は無制限 |
+| `piiGuard.fileVault.maxBytes` | `5242880` | File Vault全体の暗号化前データ量の上限（バイト）。`0` は無制限 |
 | `piiGuard.terms` | 空 | 必ず伏せたい語。登録した語は完全一致で検出します |
 | `piiGuard.dictionaryPaths` | 空 | 辞書ファイルの場所。空なら `~/.agent/pii-dictionary.txt` |
 | `piiGuard.properNouns.enabled` | オフ | 固有名詞検出を使うか |

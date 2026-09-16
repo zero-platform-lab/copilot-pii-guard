@@ -173,11 +173,14 @@ export class FileVaultStore {
 	private assertLimits(catalog: Catalog): void {
 		const limits = this.limits()
 		const records = Object.values(catalog.files)
-		if (records.length > limits.maxFiles) throw new FileVaultError("maxFiles")
-		if (records.some((record) => record.entries.length > limits.maxEntriesPerFile)) {
+		if (limits.maxFiles > 0 && records.length > limits.maxFiles) throw new FileVaultError("maxFiles")
+		if (
+			limits.maxEntriesPerFile > 0 &&
+			records.some((record) => record.entries.length > limits.maxEntriesPerFile)
+		) {
 			throw new FileVaultError("maxEntries")
 		}
-		if (Buffer.byteLength(JSON.stringify(catalog), "utf8") > limits.maxBytes) {
+		if (limits.maxBytes > 0 && Buffer.byteLength(JSON.stringify(catalog), "utf8") > limits.maxBytes) {
 			throw new FileVaultError("maxBytes")
 		}
 	}
