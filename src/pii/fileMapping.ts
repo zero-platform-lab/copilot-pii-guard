@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto"
 import * as path from "node:path"
 
 import * as vscode from "vscode"
@@ -64,6 +65,47 @@ function fileMappingLimits(): FileMappingLimits {
 	}
 }
 
+function mappingRootSetting(): string {
+	const value = vscode.workspace.getConfiguration("piiGuard").get<string>("fileMapping.root", "")
+	return typeof value === "string" ? value.trim() : ""
+}
+
+function hasWorkspace(): boolean {
+	return (vscode.workspace.workspaceFolders?.length ?? 0) > 0 || vscode.workspace.workspaceFile !== undefined
+}
+
+/** ルート配下でワークスペースごとに区画を分ける鍵。同じルートを複数ワークスペースで共有しても衝突しない。 */
+function workspaceKey(): string {
+	const identity = vscode.workspace.workspaceFile?.path ?? vscode.workspace.workspaceFolders?.[0]?.uri.path ?? ""
+	return createHash("sha256").update(identity).digest("hex").slice(0, 16)
+}
+
+/** ルートがワークスペースフォルダの中を指すか。中だとエージェントが読み取ってLLMへ送る恐れがある。 */
+function rootInsideWorkspace(target: vscode.Uri): boolean {
+	return (vscode.workspace.workspaceFolders ?? []).some((folder) => {
+		const base = folder.uri.path
+		return target.path === base || target.path.startsWith(base.endsWith("/") ? base : `${base}/`)
+	})
+}
+
+type MappingRootWarning = "rootInsideWorkspace" | "rootNotAbsolute"
+
+/**
+ * 保管ルートを決める。設定が空、またはワークスペースが無ければ拡張機能専用領域（`storageUri`）。
+ * 絶対パスならその下にワークスペースごとの区画を作る。相対パスは使わず既定へ戻して警告する。
+ */
+function resolveMappingRoot(storageUri: vscode.Uri | undefined): {
+	root: vscode.Uri | undefined
+	warning?: MappingRootWarning
+} {
+	const setting = mappingRootSetting()
+	if (!setting || !hasWorkspace()) return { root: storageUri }
+	if (!path.isAbsolute(setting)) return { root: storageUri, warning: "rootNotAbsolute" }
+	const base = vscode.Uri.file(setting)
+	const warning = rootInsideWorkspace(base) ? "rootInsideWorkspace" : undefined
+	return { root: vscode.Uri.joinPath(base, workspaceKey()), warning }
+}
+
 function uriForIdentity(identity: string): vscode.Uri | undefined {
 	const match = /^(\d+):(.+)$/.exec(identity)
 	if (!match) return undefined
@@ -95,15 +137,22 @@ function labelForIdentity(identity: string): string {
 /** 利用者操作と平文ストアの境界。モデルからは呼ばない。 */
 export class FileMappingController {
 	private readonly store: FileMappingStore | undefined
+	/** 保管ルートの設定に問題があれば、`start()` で一度だけ知らせる語。 */
+	private readonly rootWarning: MappingRootWarning | undefined
 
 	constructor(context: Pick<vscode.ExtensionContext, "storageUri">) {
-		this.store = context.storageUri
-			? new FileMappingStore(context.storageUri, undefined, undefined, fileMappingLimits)
+		const resolved = resolveMappingRoot(context.storageUri)
+		this.rootWarning = resolved.warning
+		this.store = resolved.root
+			? new FileMappingStore(resolved.root, undefined, undefined, fileMappingLimits)
 			: undefined
 	}
 
 	/** 起動時の掃除と、VS Codeが通知する移動・削除への追従を開始する。 */
 	start(): vscode.Disposable[] {
+		if (this.rootWarning) {
+			void vscode.window.showWarningMessage(t(`common:pii.fileMapping.${this.rootWarning}`))
+		}
 		if (!this.store) return []
 		void this.cleanup().catch((error) => vscode.window.showErrorMessage(errorMessage(error)))
 		return [

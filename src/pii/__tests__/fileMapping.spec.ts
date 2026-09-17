@@ -1,3 +1,5 @@
+import { createHash } from "node:crypto"
+
 import * as vscode from "vscode"
 
 const mocks = vi.hoisted(() => {
@@ -9,6 +11,8 @@ const mocks = vi.hoisted(() => {
 		activeTextEditor: undefined as unknown,
 		workspaceFolder: undefined as unknown,
 		workspaceFolders: [] as { index: number; uri: { path: string } }[],
+		workspaceFile: undefined as unknown,
+		config: {} as Record<string, unknown>,
 		renameListener: undefined as unknown,
 		deleteListener: undefined as unknown,
 		showInformationMessage: vi.fn(async (..._args: unknown[]) => undefined as unknown),
@@ -31,10 +35,15 @@ vi.mock("vscode", () => ({
 		showQuickPick: mocks.showQuickPick,
 	},
 	workspace: {
-		getConfiguration: () => ({ get: (_key: string, fallback: unknown) => fallback }),
+		getConfiguration: () => ({
+			get: (key: string, fallback?: unknown) => (key in mocks.config ? mocks.config[key] : fallback),
+		}),
 		getWorkspaceFolder: () => mocks.workspaceFolder,
 		get workspaceFolders() {
 			return mocks.workspaceFolders
+		},
+		get workspaceFile() {
+			return mocks.workspaceFile
 		},
 		onDidRenameFiles(listener: unknown) {
 			mocks.renameListener = listener
@@ -80,6 +89,9 @@ vi.mock("vscode", () => ({
 		joinPath(base: { path: string }, ...parts: string[]) {
 			return { path: [base.path.replace(/\/$/, ""), ...parts].join("/") }
 		},
+		file(fsPath: string) {
+			return { path: fsPath }
+		},
 	},
 }))
 
@@ -107,6 +119,8 @@ beforeEach(() => {
 	mocks.secrets.clear()
 	mocks.workspaceFolder = { index: 0, uri: uri("/w") }
 	mocks.workspaceFolders = [mocks.workspaceFolder as never]
+	mocks.workspaceFile = undefined
+	mocks.config = {}
 	mocks.renameListener = undefined
 	mocks.deleteListener = undefined
 	mocks.ioError = undefined
@@ -607,5 +621,57 @@ describe("FileMappingController", () => {
 		expect(await controller.restore(uri("/w/other.md"), "{{email-006}}", (text) => text)).toBe(
 			"bob@corp.example",
 		)
+	})
+})
+
+describe("保管ルートの設定", () => {
+	const enableOne = async (controller: FileMappingController) => {
+		const mapping = new PiiMapping()
+		mapping.importEntries([["{{email-005}}", "alice@corp.example"]])
+		mocks.showWarningMessage.mockResolvedValueOnce("common:pii.fileMapping.enable")
+		await controller.enable(mapping)
+	}
+
+	it("空なら storageUri へ保管し、警告しない", async () => {
+		const controller = new FileMappingController(context())
+		controller.start()
+		expect(mocks.showWarningMessage).not.toHaveBeenCalled()
+		await enableOne(controller)
+		expect([...mocks.files.keys()].some((key) => key.startsWith("/state/"))).toBe(true)
+	})
+
+	it("絶対パスを設定すると、その配下のワークスペース区画へ保管する", async () => {
+		mocks.config["fileMapping.root"] = "/backup/pii"
+		const key = createHash("sha256").update("/w").digest("hex").slice(0, 16)
+		const controller = new FileMappingController(context())
+		controller.start()
+		expect(mocks.showWarningMessage).not.toHaveBeenCalled()
+		await enableOne(controller)
+		expect(mocks.files.has(`/backup/pii/${key}/file-mapping.v1.json`)).toBe(true)
+	})
+
+	it("ワークスペースごとに別の区画を作る（workspaceFile を鍵にする）", async () => {
+		mocks.config["fileMapping.root"] = "/backup/pii"
+		mocks.workspaceFile = uri("/team/site.code-workspace")
+		const key = createHash("sha256").update("/team/site.code-workspace").digest("hex").slice(0, 16)
+		const controller = new FileMappingController(context())
+		await enableOne(controller)
+		expect([...mocks.files.keys()].some((k) => k.startsWith(`/backup/pii/${key}/`))).toBe(true)
+	})
+
+	it("ワークスペース内を指すと警告する（利用は続ける）", () => {
+		mocks.config["fileMapping.root"] = "/w/secret"
+		const controller = new FileMappingController(context())
+		controller.start()
+		expect(mocks.showWarningMessage).toHaveBeenCalledWith("common:pii.fileMapping.rootInsideWorkspace")
+	})
+
+	it("相対パスは使わず、既定へ戻して警告する", async () => {
+		mocks.config["fileMapping.root"] = "relative/dir"
+		const controller = new FileMappingController(context())
+		controller.start()
+		expect(mocks.showWarningMessage).toHaveBeenCalledWith("common:pii.fileMapping.rootNotAbsolute")
+		await enableOne(controller)
+		expect([...mocks.files.keys()].some((key) => key.startsWith("/state/"))).toBe(true)
 	})
 })

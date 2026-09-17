@@ -82,6 +82,10 @@ describe("チェックの形を、名前の並びへ変える", () => {
 		expect(withConfig({ "fileMapping.retentionDays": 30 }).fileMapping?.retentionDays).toBe(30)
 	})
 
+	it("ファイル対応表の保管ルートを読む", () => {
+		expect(withConfig({ "fileMapping.root": "/backup/pii" }).fileMapping?.root).toBe("/backup/pii")
+	})
+
 	it("セッション対応表の対応数上限を読む", () => {
 		expect(withConfig({ "sessionMapping.maxEntries": 10_000 }).sessionMapping?.maxEntries).toBe(10_000)
 	})
@@ -129,5 +133,14 @@ describe("package.json と食い違わない", () => {
 		}
 
 		expect(declared).toMatchObject({ default: 30, minimum: 0 })
+	})
+
+	it("保管ルートは文字列で、既定は空", async () => {
+		const declared = (await manifestProperties())["piiGuard.fileMapping.root"] as unknown as {
+			type: string
+			default: string
+		}
+
+		expect(declared).toMatchObject({ type: "string", default: "" })
 	})
 })
