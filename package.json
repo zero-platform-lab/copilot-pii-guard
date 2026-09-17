@@ -6,7 +6,7 @@
 		"type": "git",
 		"url": "https://github.com/zero-platform-lab/copilot-pii-guard.git"
 	},
-	"version": "0.2.8",
+	"version": "0.2.9",
 	"publisher": "internal",
 	"private": true,
 	"license": "Apache-2.0",
