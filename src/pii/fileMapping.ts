@@ -5,13 +5,13 @@ import * as vscode from "vscode"
 import { t } from "../messages"
 
 import {
-	DEFAULT_FILE_VAULT_LIMITS,
-	FileVaultError,
-	FileVaultStore,
-	type FileVaultEntry,
-	type FileVaultLimits,
-} from "./fileVaultStore"
-import { PiiVault, PiiVaultLimitError } from "./maskConversation"
+	DEFAULT_FILE_MAPPING_LIMITS,
+	FileMappingError,
+	FileMappingStore,
+	type FileMappingEntry,
+	type FileMappingLimits,
+} from "./fileMappingStore"
+import { PiiMapping, PiiMappingLimitError } from "./maskConversation"
 import { unmaskText } from "./maskText"
 
 type FileTarget = {
@@ -23,7 +23,7 @@ type FileTarget = {
 
 const DEFAULT_RETENTION_DAYS = 30
 
-export function fileVaultIdentity(uri: vscode.Uri): string | undefined {
+export function fileMappingIdentity(uri: vscode.Uri): string | undefined {
 	const folder = vscode.workspace.getWorkspaceFolder(uri)
 	if (!folder) return undefined
 	const relative = path.posix.relative(folder.uri.path, uri.path)
@@ -32,9 +32,9 @@ export function fileVaultIdentity(uri: vscode.Uri): string | undefined {
 }
 
 function errorMessage(error: unknown): string {
-	if (error instanceof PiiVaultLimitError) return t("common:pii.sessionVault.maxEntries")
-	if (error instanceof FileVaultError) return t(`common:pii.fileVault.${error.code}`)
-	return t("common:pii.fileVault.failed")
+	if (error instanceof PiiMappingLimitError) return t("common:pii.sessionMapping.maxEntries")
+	if (error instanceof FileMappingError) return t(`common:pii.fileMapping.${error.code}`)
+	return t("common:pii.fileMapping.failed")
 }
 
 function isNotFound(error: unknown): boolean {
@@ -44,7 +44,7 @@ function isNotFound(error: unknown): boolean {
 function retentionDays(): number {
 	const value = vscode.workspace
 		.getConfiguration("piiGuard")
-		.get<number>("fileVault.retentionDays", DEFAULT_RETENTION_DAYS)
+		.get<number>("fileMapping.retentionDays", DEFAULT_RETENTION_DAYS)
 	return Number.isInteger(value) && value >= 0 ? value : DEFAULT_RETENTION_DAYS
 }
 
@@ -52,15 +52,15 @@ function nonNegativeInteger(value: unknown, fallback: number): number {
 	return Number.isInteger(value) && Number(value) >= 0 ? Number(value) : fallback
 }
 
-function fileVaultLimits(): FileVaultLimits {
+function fileMappingLimits(): FileMappingLimits {
 	const config = vscode.workspace.getConfiguration("piiGuard")
 	return {
-		maxFiles: nonNegativeInteger(config.get("fileVault.maxFiles"), DEFAULT_FILE_VAULT_LIMITS.maxFiles),
+		maxFiles: nonNegativeInteger(config.get("fileMapping.maxFiles"), DEFAULT_FILE_MAPPING_LIMITS.maxFiles),
 		maxEntriesPerFile: nonNegativeInteger(
-			config.get("fileVault.maxEntriesPerFile"),
-			DEFAULT_FILE_VAULT_LIMITS.maxEntriesPerFile,
+			config.get("fileMapping.maxEntriesPerFile"),
+			DEFAULT_FILE_MAPPING_LIMITS.maxEntriesPerFile,
 		),
-		maxBytes: nonNegativeInteger(config.get("fileVault.maxBytes"), DEFAULT_FILE_VAULT_LIMITS.maxBytes),
+		maxBytes: nonNegativeInteger(config.get("fileMapping.maxBytes"), DEFAULT_FILE_MAPPING_LIMITS.maxBytes),
 	}
 }
 
@@ -93,12 +93,12 @@ function labelForIdentity(identity: string): string {
 }
 
 /** 利用者操作と平文ストアの境界。モデルからは呼ばない。 */
-export class FileVaultController {
-	private readonly store: FileVaultStore | undefined
+export class FileMappingController {
+	private readonly store: FileMappingStore | undefined
 
 	constructor(context: Pick<vscode.ExtensionContext, "storageUri">) {
 		this.store = context.storageUri
-			? new FileVaultStore(context.storageUri, undefined, undefined, fileVaultLimits)
+			? new FileMappingStore(context.storageUri, undefined, undefined, fileMappingLimits)
 			: undefined
 	}
 
@@ -138,8 +138,8 @@ export class FileVaultController {
 	private async followRenames(files: readonly { oldUri: vscode.Uri; newUri: vscode.Uri }[]): Promise<void> {
 		if (!this.store) return
 		for (const { oldUri, newUri } of files) {
-			const from = fileVaultIdentity(oldUri)
-			const to = fileVaultIdentity(newUri)
+			const from = fileMappingIdentity(oldUri)
+			const to = fileMappingIdentity(newUri)
 			if (from && to) await this.store.movePath(from, to)
 			else if (from) await this.store.deletePath(from)
 		}
@@ -148,7 +148,7 @@ export class FileVaultController {
 	private async followDeletes(files: readonly vscode.Uri[]): Promise<void> {
 		if (!this.store) return
 		for (const uri of files) {
-			const identity = fileVaultIdentity(uri)
+			const identity = fileMappingIdentity(uri)
 			if (identity) await this.store.deletePath(identity)
 		}
 	}
@@ -157,7 +157,7 @@ export class FileVaultController {
 		const document = vscode.window.activeTextEditor?.document
 		if (!document) return undefined
 		const uri = document.uri
-		const identity = fileVaultIdentity(uri)
+		const identity = fileMappingIdentity(uri)
 		if (!identity) return undefined
 		return {
 			identity,
@@ -174,22 +174,22 @@ export class FileVaultController {
 			return undefined
 		}
 		if (!target || !this.store) {
-			await vscode.window.showWarningMessage(t("common:pii.fileVault.workspaceRequired"))
+			await vscode.window.showWarningMessage(t("common:pii.fileMapping.workspaceRequired"))
 			return undefined
 		}
 		return target
 	}
 
-	async enable(vault: PiiVault): Promise<void> {
+	async enable(mapping: PiiMapping): Promise<void> {
 		const target = await this.requireTarget()
 		if (!target || !this.store) return
 		try {
 			await this.cleanup()
 			const existing = await this.store.inspect(target.identity)
 			if (existing) {
-				vault.importEntries(existing.entries)
+				mapping.importEntries(existing.entries)
 				await vscode.window.showInformationMessage(
-					t("common:pii.fileVault.alreadyEnabled", {
+					t("common:pii.fileMapping.alreadyEnabled", {
 						file: target.label,
 						count: existing.entries.length,
 					}),
@@ -200,10 +200,10 @@ export class FileVaultController {
 			await vscode.window.showErrorMessage(errorMessage(error))
 			return
 		}
-		const entries = [...vault.entries].filter(([placeholder]) => target.text.includes(placeholder))
-		const confirm = t("common:pii.fileVault.enable")
+		const entries = [...mapping.entries].filter(([placeholder]) => target.text.includes(placeholder))
+		const confirm = t("common:pii.fileMapping.enable")
 		const answer = await vscode.window.showWarningMessage(
-			t("common:pii.fileVault.confirmEnable", {
+			t("common:pii.fileMapping.confirmEnable", {
 				file: target.label,
 				count: entries.length,
 			}),
@@ -215,7 +215,7 @@ export class FileVaultController {
 		try {
 			const record = await this.store.enable(target.identity, entries)
 			await vscode.window.showInformationMessage(
-				t("common:pii.fileVault.enabled", {
+				t("common:pii.fileMapping.enabled", {
 					file: target.label,
 					count: record.entries.length,
 				}),
@@ -232,12 +232,12 @@ export class FileVaultController {
 			await this.cleanup()
 			const record = await this.store.inspect(target.identity)
 			if (!record) {
-				await vscode.window.showInformationMessage(t("common:pii.fileVault.notEnabled", { file: target.label }))
+				await vscode.window.showInformationMessage(t("common:pii.fileMapping.notEnabled", { file: target.label }))
 				return
 			}
-			const confirm = t("common:pii.clearVault")
+			const confirm = t("common:pii.clearMapping")
 			const answer = await vscode.window.showWarningMessage(
-				t("common:pii.fileVault.confirmDisable", {
+				t("common:pii.fileMapping.confirmDisable", {
 					file: target.label,
 					count: record.entries.length,
 				}),
@@ -246,7 +246,7 @@ export class FileVaultController {
 			)
 			if (answer !== confirm) return
 			await this.store.delete(target.identity)
-			await vscode.window.showInformationMessage(t("common:pii.fileVault.disabled", { file: target.label }))
+			await vscode.window.showInformationMessage(t("common:pii.fileMapping.disabled", { file: target.label }))
 		} catch (error) {
 			await vscode.window.showErrorMessage(errorMessage(error))
 		}
@@ -260,11 +260,11 @@ export class FileVaultController {
 			const record = await this.store.inspect(target.identity)
 			await vscode.window.showInformationMessage(
 				record
-					? t("common:pii.fileVault.statusEnabled", {
+					? t("common:pii.fileMapping.statusEnabled", {
 							file: target.label,
 							count: record.entries.length,
 						})
-					: t("common:pii.fileVault.notEnabled", { file: target.label }),
+					: t("common:pii.fileMapping.notEnabled", { file: target.label }),
 			)
 		} catch (error) {
 			await vscode.window.showErrorMessage(errorMessage(error))
@@ -273,19 +273,19 @@ export class FileVaultController {
 
 	async clearSelected(): Promise<void> {
 		if (!this.store) {
-			await vscode.window.showWarningMessage(t("common:pii.fileVault.workspaceRequired"))
+			await vscode.window.showWarningMessage(t("common:pii.fileMapping.workspaceRequired"))
 			return
 		}
 		try {
 			await this.cleanup()
 			const records = await this.store.list()
 			if (records.length === 0) {
-				await vscode.window.showInformationMessage(t("common:pii.fileVault.none"))
+				await vscode.window.showInformationMessage(t("common:pii.fileMapping.none"))
 				return
 			}
 			const items = records.map((record) => ({
 				label: labelForIdentity(record.identity),
-				description: t("common:pii.fileVault.entryCount", {
+				description: t("common:pii.fileMapping.entryCount", {
 					count: record.entries.length,
 				}),
 				identity: record.identity,
@@ -293,7 +293,7 @@ export class FileVaultController {
 			}))
 			const selected = await vscode.window.showQuickPick(items, {
 				canPickMany: true,
-				placeHolder: t("common:pii.fileVault.pickClear"),
+				placeHolder: t("common:pii.fileMapping.pickClear"),
 			})
 			if (!selected || selected.length === 0) return
 			await this.confirmAndDelete(selected)
@@ -302,23 +302,23 @@ export class FileVaultController {
 		}
 	}
 
-	async clearAll(vault?: PiiVault): Promise<void> {
+	async clearAll(mapping?: PiiMapping): Promise<void> {
 		if (!this.store) {
-			await vscode.window.showWarningMessage(t("common:pii.fileVault.workspaceRequired"))
+			await vscode.window.showWarningMessage(t("common:pii.fileMapping.workspaceRequired"))
 			return
 		}
 		try {
 			await this.cleanup()
 			const records = await this.store.list()
-			if (records.length === 0 && (!vault || vault.size === 0)) {
-				await vscode.window.showInformationMessage(t("common:pii.fileVault.none"))
+			if (records.length === 0 && (!mapping || mapping.size === 0)) {
+				await vscode.window.showInformationMessage(t("common:pii.fileMapping.none"))
 				return
 			}
 			const fileEntries = records.reduce((sum, record) => sum + record.entries.length, 0)
-			const sessionEntries = vault?.size ?? 0
-			const confirm = t("common:pii.clearVault")
+			const sessionEntries = mapping?.size ?? 0
+			const confirm = t("common:pii.clearMapping")
 			const answer = await vscode.window.showWarningMessage(
-				t("common:pii.fileVault.confirmClearAll", {
+				t("common:pii.fileMapping.confirmClearAll", {
 					files: records.length,
 					fileCount: fileEntries,
 					sessionCount: sessionEntries,
@@ -328,9 +328,9 @@ export class FileVaultController {
 			)
 			if (answer !== confirm) return
 			const removed = await this.store.deleteMany(records.map((record) => record.identity))
-			const clearedSession = vault?.clearSnapshot([...vault.entries.keys()]) ?? 0
+			const clearedSession = mapping?.clearSnapshot([...mapping.entries.keys()]) ?? 0
 			await vscode.window.showInformationMessage(
-				t("common:pii.fileVault.clearedAll", {
+				t("common:pii.fileMapping.clearedAll", {
 					files: removed.files,
 					fileCount: removed.entries,
 					sessionCount: clearedSession,
@@ -344,9 +344,9 @@ export class FileVaultController {
 	private async confirmAndDelete(selected: readonly { identity: string; count: number }[]): Promise<void> {
 		if (!this.store) return
 		const entries = selected.reduce((sum, item) => sum + item.count, 0)
-		const confirm = t("common:pii.clearVault")
+		const confirm = t("common:pii.clearMapping")
 		const answer = await vscode.window.showWarningMessage(
-			t("common:pii.fileVault.confirmClearMany", {
+			t("common:pii.fileMapping.confirmClearMany", {
 				files: selected.length,
 				count: entries,
 			}),
@@ -356,15 +356,15 @@ export class FileVaultController {
 		if (answer !== confirm) return
 		const removed = await this.store.deleteMany(selected.map((item) => item.identity))
 		await vscode.window.showInformationMessage(
-			t("common:pii.fileVault.clearedMany", {
+			t("common:pii.fileMapping.clearedMany", {
 				files: removed.files,
 				count: removed.entries,
 			}),
 		)
 	}
 
-	async record(uri: vscode.Uri, entries: readonly FileVaultEntry[]): Promise<boolean> {
-		const identity = fileVaultIdentity(uri)
+	async record(uri: vscode.Uri, entries: readonly FileMappingEntry[]): Promise<boolean> {
+		const identity = fileMappingIdentity(uri)
 		if (!identity || !this.store) return true
 		try {
 			await this.cleanup()
@@ -376,19 +376,19 @@ export class FileVaultController {
 		}
 	}
 
-	async recordToolPath(path: string, entries: readonly FileVaultEntry[]): Promise<boolean> {
+	async recordToolPath(path: string, entries: readonly FileMappingEntry[]): Promise<boolean> {
 		const uri = uriForToolPath(path)
 		return uri ? this.record(uri, entries) : true
 	}
 
-	/** 伏せ字を新しく割り当てる前に、保存済み番号をSession Vaultへ予約する。 */
-	async prepare(uri: vscode.Uri, vault: PiiVault): Promise<boolean> {
-		const identity = fileVaultIdentity(uri)
+	/** 伏せ字を新しく割り当てる前に、保存済み番号をセッション対応表へ予約する。 */
+	async prepare(uri: vscode.Uri, mapping: PiiMapping): Promise<boolean> {
+		const identity = fileMappingIdentity(uri)
 		if (!identity || !this.store) return true
 		try {
 			await this.cleanup()
 			const record = await this.store.load(identity)
-			if (record) vault.importEntries(record.entries)
+			if (record) mapping.importEntries(record.entries)
 			return true
 		} catch (error) {
 			await vscode.window.showErrorMessage(errorMessage(error))
@@ -397,24 +397,24 @@ export class FileVaultController {
 	}
 
 	/** ファイル道具向け。衝突した保存済み伏せ字を今回の番号へ置き換える関数を返す。 */
-	async prepareToolPath(path: string, vault: PiiVault): Promise<(text: string) => string> {
+	async prepareToolPath(path: string, mapping: PiiMapping): Promise<(text: string) => string> {
 		const uri = uriForToolPath(path)
-		return uri ? this.prepareReference(uri, vault) : (text) => text
+		return uri ? this.prepareReference(uri, mapping) : (text) => text
 	}
 
 	/** 添付ファイルや選択範囲向け。保存済み対応を取り込み、番号衝突を置き換える。 */
-	async prepareReference(uri: vscode.Uri, vault: PiiVault): Promise<(text: string) => string> {
-		const identity = fileVaultIdentity(uri)
+	async prepareReference(uri: vscode.Uri, mapping: PiiMapping): Promise<(text: string) => string> {
+		const identity = fileMappingIdentity(uri)
 		if (!identity || !this.store) return (text) => text
 		await this.cleanup()
 		const record = await this.store.load(identity)
 		if (!record) return (text) => text
-		const remapped = vault.importEntries(record.entries)
+		const remapped = mapping.importEntries(record.entries)
 		return (text) => unmaskText(text, remapped)
 	}
 
 	async restore(uri: vscode.Uri, text: string, restoreSession: (text: string) => string): Promise<string> {
-		const identity = fileVaultIdentity(uri)
+		const identity = fileMappingIdentity(uri)
 		if (!identity || !this.store) return restoreSession(text)
 		await this.cleanup()
 		const record = await this.store.load(identity)

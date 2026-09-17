@@ -5,42 +5,42 @@
 
 const MESSAGES: Record<string, string> = {
 	"common:pii.noEditor": "開いているファイルがありません。",
-	"common:pii.noVault": "戻せる伏せ字がありません。",
-	"common:pii.sessionVault": "Session Vault全体",
-	"common:pii.confirmClearVault":
+	"common:pii.noMapping": "戻せる伏せ字がありません。",
+	"common:pii.sessionMapping": "セッション対応表全体",
+	"common:pii.confirmClearMapping":
 		"{{scope}}の対応 {{count}} 件を消去します。消去後、この対応を使った伏せ字は元の値へ戻せません。",
-	"common:pii.clearVault": "消去する",
-	"common:pii.vaultCleared": "Session Vaultから {{count}} 件を消去しました。",
-	"common:pii.sessionVault.maxEntries":
-		"Session Vaultの対応数が設定上限に達したため、伏せ字化を停止しました。上限を増やすか、Session Vaultを消去してください。",
-	"common:pii.fileVault.enable": "有効にする",
-	"common:pii.fileVault.confirmEnable":
-		"{{file}}のFile Vaultを有効にします。対応 {{count}} 件をワークスペース専用領域へ保存します。",
-	"common:pii.fileVault.enabled": "{{file}}のFile Vaultを有効にしました（対応 {{count}} 件）。",
-	"common:pii.fileVault.alreadyEnabled": "{{file}}のFile Vaultはすでに有効です（対応 {{count}} 件）。",
-	"common:pii.fileVault.confirmDisable":
-		"{{file}}のFile Vaultと対応 {{count}} 件を消去します。消去後、この対応を使った伏せ字は元の値へ戻せません。",
-	"common:pii.fileVault.disabled": "{{file}}のFile Vaultを消去し、永続化を無効にしました。",
-	"common:pii.fileVault.notEnabled": "{{file}}のFile Vaultは無効です。",
-	"common:pii.fileVault.statusEnabled": "{{file}}のFile Vaultは有効です（対応 {{count}} 件）。",
-	"common:pii.fileVault.workspaceRequired": "File Vaultには、ワークスペース内の保存済みファイルが必要です。",
-	"common:pii.fileVault.corrupt": "File Vaultの破損を検出したため、読込も上書きも停止しました。",
-	"common:pii.fileVault.unsupported": "未対応形式のFile Vaultは読込も上書きもしません。",
-	"common:pii.fileVault.failed": "File Vaultを読み込めませんでした。既存データは変更していません。",
-	"common:pii.fileVault.saveFailed": "ファイルは伏せましたが、File Vaultを更新できませんでした。",
-	"common:pii.fileVault.maxFiles": "File Vaultのファイル数が設定上限に達したため、保存しませんでした。",
-	"common:pii.fileVault.maxEntries": "このファイルの対応数が設定上限に達したため、保存しませんでした。",
-	"common:pii.fileVault.maxBytes": "File Vault全体の容量が設定上限に達したため、保存しませんでした。",
-	"common:pii.fileVault.none": "消去できるFile Vaultがありません。",
-	"common:pii.fileVault.entryCount": "対応 {{count}} 件",
-	"common:pii.fileVault.pickClear": "消去するFile Vaultを選んでください。",
-	"common:pii.fileVault.confirmClearMany":
-		"File Vault {{files}} ファイル、対応 {{count}} 件を消去します。消去後は元の値へ戻せません。",
-	"common:pii.fileVault.clearedMany": "File Vault {{files}} ファイル、対応 {{count}} 件を消去しました。",
-	"common:pii.fileVault.confirmClearAll":
-		"File Vault {{files}} ファイル（対応 {{fileCount}} 件）とSession Vault（対応 {{sessionCount}} 件）をすべて消去します。消去後は元の値へ戻せません。",
-	"common:pii.fileVault.clearedAll":
-		"File Vault {{files}} ファイル（対応 {{fileCount}} 件）とSession Vault（対応 {{sessionCount}} 件）を消去しました。",
+	"common:pii.clearMapping": "消去する",
+	"common:pii.mappingCleared": "セッション対応表から {{count}} 件を消去しました。",
+	"common:pii.sessionMapping.maxEntries":
+		"セッション対応表の対応数が設定上限に達したため、伏せ字化を停止しました。上限を増やすか、セッション対応表を消去してください。",
+	"common:pii.fileMapping.enable": "有効にする",
+	"common:pii.fileMapping.confirmEnable":
+		"{{file}}のファイル対応表を有効にします。対応 {{count}} 件をワークスペース専用領域へ保存します。",
+	"common:pii.fileMapping.enabled": "{{file}}のファイル対応表を有効にしました（対応 {{count}} 件）。",
+	"common:pii.fileMapping.alreadyEnabled": "{{file}}のファイル対応表はすでに有効です（対応 {{count}} 件）。",
+	"common:pii.fileMapping.confirmDisable":
+		"{{file}}のファイル対応表と対応 {{count}} 件を消去します。消去後、この対応を使った伏せ字は元の値へ戻せません。",
+	"common:pii.fileMapping.disabled": "{{file}}のファイル対応表を消去し、永続化を無効にしました。",
+	"common:pii.fileMapping.notEnabled": "{{file}}のファイル対応表は無効です。",
+	"common:pii.fileMapping.statusEnabled": "{{file}}のファイル対応表は有効です（対応 {{count}} 件）。",
+	"common:pii.fileMapping.workspaceRequired": "ファイル対応表には、ワークスペース内の保存済みファイルが必要です。",
+	"common:pii.fileMapping.corrupt": "ファイル対応表の破損を検出したため、読込も上書きも停止しました。",
+	"common:pii.fileMapping.unsupported": "未対応形式のファイル対応表は読込も上書きもしません。",
+	"common:pii.fileMapping.failed": "ファイル対応表を読み込めませんでした。既存データは変更していません。",
+	"common:pii.fileMapping.saveFailed": "ファイルは伏せましたが、ファイル対応表を更新できませんでした。",
+	"common:pii.fileMapping.maxFiles": "ファイル対応表のファイル数が設定上限に達したため、保存しませんでした。",
+	"common:pii.fileMapping.maxEntries": "このファイルの対応数が設定上限に達したため、保存しませんでした。",
+	"common:pii.fileMapping.maxBytes": "ファイル対応表全体の容量が設定上限に達したため、保存しませんでした。",
+	"common:pii.fileMapping.none": "消去できるファイル対応表がありません。",
+	"common:pii.fileMapping.entryCount": "対応 {{count}} 件",
+	"common:pii.fileMapping.pickClear": "消去するファイル対応表を選んでください。",
+	"common:pii.fileMapping.confirmClearMany":
+		"ファイル対応表 {{files}} ファイル、対応 {{count}} 件を消去します。消去後は元の値へ戻せません。",
+	"common:pii.fileMapping.clearedMany": "ファイル対応表 {{files}} ファイル、対応 {{count}} 件を消去しました。",
+	"common:pii.fileMapping.confirmClearAll":
+		"ファイル対応表 {{files}} ファイル（対応 {{fileCount}} 件）とセッション対応表（対応 {{sessionCount}} 件）をすべて消去します。消去後は元の値へ戻せません。",
+	"common:pii.fileMapping.clearedAll":
+		"ファイル対応表 {{files}} ファイル（対応 {{fileCount}} 件）とセッション対応表（対応 {{sessionCount}} 件）を消去しました。",
 	"common:pii.nothingToRestore": "このファイルに伏せ字はありません。",
 	"common:pii.nothingFound": "伏せる個人情報は見つかりませんでした。",
 	"common:pii.found": "{{summary}} が見つかりました。ファイルは変更していません。",

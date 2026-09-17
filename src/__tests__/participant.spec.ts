@@ -11,12 +11,12 @@
 // 確かめているのか分からない。
 
 import { TaskPiiMasker } from "../pii/TaskPiiMasker"
-import { PiiVault, resetSessionVault } from "../pii/maskConversation"
+import { PiiMapping, resetSessionMapping } from "../pii/maskConversation"
 import { createHandler } from "../participant"
 
 vi.mock("../paths", () => ({ getGlobalAgentDirectory: () => "/w/存在しない" }))
 
-beforeEach(() => resetSessionVault())
+beforeEach(() => resetSessionMapping())
 
 /** 伏せたい値。どれも作り物である。 */
 const SECRETS = {
@@ -129,12 +129,12 @@ describe("伏せてから Copilot へ送る", () => {
 		expect(out.parts.join("")).toContain("参照した本文 3 件")
 	})
 
-	it("添付ファイルと選択範囲のFile Vaultを一度だけ取り込み、衝突した番号を直す", async () => {
+	it("添付ファイルと選択範囲のファイル対応表を一度だけ取り込み、衝突した番号を直す", async () => {
 		const fake = fakeModel(["{{email-002}}へ返します"])
 		const out = fakeStream()
 		const masker = new TaskPiiMasker({ enabled: true } as never)
 		masker.allocator.importEntries([["{{email-001}}", "bob@corp.example"]])
-		const prepareReferenceVault = vi.fn(async (_uri: unknown, active: TaskPiiMasker) => {
+		const prepareReferenceMapping = vi.fn(async (_uri: unknown, active: TaskPiiMasker) => {
 			const remapped = active.allocator.importEntries([["{{email-001}}", "alice@corp.example"]])
 			return (text: string) => {
 				let replaced = text
@@ -147,7 +147,7 @@ describe("伏せてから Copilot へ送る", () => {
 			isEnabled: () => true,
 			selectModel: async () => fake.model as never,
 			openTextDocument: async () => ({ getText: () => "連絡先は {{email-001}}" }) as never,
-			prepareReferenceVault,
+			prepareReferenceMapping,
 		})
 		const uri = { scheme: "file", authority: "", path: "/work/customer.txt", query: "" }
 
@@ -162,13 +162,13 @@ describe("伏せてから Copilot へ送る", () => {
 		)
 
 		const sent = fake.seen.join("")
-		expect(prepareReferenceVault).toHaveBeenCalledTimes(1)
+		expect(prepareReferenceMapping).toHaveBeenCalledTimes(1)
 		expect(sent).toContain("{{email-002}}")
 		expect(sent).not.toContain("連絡先は {{email-001}}")
 		expect(out.parts.join("")).toContain("alice@corp.exampleへ返します")
 	})
 
-	it("File Vaultを準備できない参照は送らず、理由を表示する", async () => {
+	it("ファイル対応表を準備できない参照は送らず、理由を表示する", async () => {
 		const fake = fakeModel(["はい"])
 		const out = fakeStream()
 		const handler = createHandler({
@@ -176,7 +176,7 @@ describe("伏せてから Copilot へ送る", () => {
 			isEnabled: () => true,
 			selectModel: async () => fake.model as never,
 			openTextDocument: async () => ({ getText: () => "機密 {{email-001}}" }) as never,
-			prepareReferenceVault: async () => Promise.reject(new Error("broken vault")),
+			prepareReferenceMapping: async () => Promise.reject(new Error("broken mapping")),
 		})
 		const uri = { scheme: "file", path: "/work/private.txt" }
 
@@ -192,15 +192,15 @@ describe("伏せてから Copilot へ送る", () => {
 		expect(out.parts.join("")).toContain("/work/private.txt")
 	})
 
-	it("伏せ字化が切ならFile Vaultを準備せず、参照本文をそのまま送る", async () => {
+	it("伏せ字化が切ならファイル対応表を準備せず、参照本文をそのまま送る", async () => {
 		const fake = fakeModel(["はい"])
-		const prepareReferenceVault = vi.fn(async () => Promise.reject(new Error("broken vault")))
+		const prepareReferenceMapping = vi.fn(async () => Promise.reject(new Error("broken mapping")))
 		const handler = createHandler({
 			masker: () => new TaskPiiMasker({ enabled: false } as never),
 			isEnabled: () => false,
 			selectModel: async () => fake.model as never,
 			openTextDocument: async () => ({ getText: () => "連絡先は alice@corp.example" }) as never,
-			prepareReferenceVault,
+			prepareReferenceMapping,
 		})
 		const uri = { scheme: "file", path: "/work/customer.txt" }
 
@@ -211,7 +211,7 @@ describe("伏せてから Copilot へ送る", () => {
 			{} as never,
 		)
 
-		expect(prepareReferenceVault).not.toHaveBeenCalled()
+		expect(prepareReferenceMapping).not.toHaveBeenCalled()
 		expect(fake.seen.join("")).toContain("alice@corp.example")
 	})
 
@@ -291,13 +291,13 @@ describe("伏せてから Copilot へ送る", () => {
 		expect(out.parts.join("")).toContain("伏せるものは見つかりませんでした")
 	})
 
-	it("Session Vault上限に達したらモデルへ送らず、理由を表示する", async () => {
+	it("セッション対応表上限に達したらモデルへ送らず、理由を表示する", async () => {
 		const fake = fakeModel(["送られない"])
 		const out = fakeStream()
-		const vault = new PiiVault()
+		const mapping = new PiiMapping()
 		const handler = createHandler({
 			masker: () =>
-				new TaskPiiMasker({ enabled: true, sessionVault: { maxEntries: 1 } } as never, vault),
+				new TaskPiiMasker({ enabled: true, sessionMapping: { maxEntries: 1 } } as never, mapping),
 			isEnabled: () => true,
 			selectModel: async () => fake.model as never,
 		})
@@ -310,8 +310,8 @@ describe("伏せてから Copilot へ送る", () => {
 		)
 
 		expect(fake.seen).toHaveLength(0)
-		expect(vault.size).toBe(0)
-		expect(out.parts.join("")).toContain("Session Vaultの対応数が設定上限に達した")
+		expect(mapping.size).toBe(0)
+		expect(out.parts.join("")).toContain("セッション対応表の対応数が設定上限に達した")
 	})
 
 	it("モデルを選べなければ、送らずに理由を出す", async () => {

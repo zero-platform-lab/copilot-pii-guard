@@ -125,9 +125,9 @@ export async function runFileTool(
 		restoreWrites: boolean
 		token: vscode.CancellationToken
 		host?: FileToolHost
-		/** File VaultをSession Vaultへ取り込み、保存済み伏せ字を今回の番号へ直す。 */
+		/** ファイル対応表をセッション対応表へ取り込み、保存済み伏せ字を今回の番号へ直す。 */
 		prepareFile?: (path: string) => Promise<(text: string) => string>
-		/** 伏せ字のまま書いた対応を、対象ファイルのFile Vaultへ保存する。 */
+		/** 伏せ字のまま書いた対応を、対象ファイルのファイル対応表へ保存する。 */
 		recordFile?: (path: string, entries: readonly (readonly [string, string])[]) => Promise<boolean>
 	},
 ): Promise<string> {
@@ -181,7 +181,7 @@ export async function runFileTool(
 		if (!options.restoreWrites && options.recordFile) {
 			const entries = [...masker.allocator.entries].filter(([placeholder]) => written.includes(placeholder))
 			if (entries.length > 0 && !(await options.recordFile(path, entries))) {
-				result += " File Vaultを更新できなかったため、この伏せ字はセッション終了後に復元できません。"
+				result += " ファイル対応表を更新できなかったため、この伏せ字はセッション終了後に復元できません。"
 			}
 		}
 	} else {

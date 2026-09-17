@@ -7,9 +7,9 @@ import {
 	collectTexts,
 	maskConversation,
 	MEMO_LIMIT,
-	PiiVault,
-	PiiVaultLimitError,
-	sessionVault,
+	PiiMapping,
+	PiiMappingLimitError,
+	sessionMapping,
 	type MaskMemo,
 } from "./maskConversation"
 import { detectWith, loadBackend, type NerBackend } from "./nerBackend"
@@ -104,7 +104,7 @@ export class TaskPiiMasker {
 	 * 分けると、別のタスクの `{{email-001}}` と同じ形になり、モデルが誤った値を
 	 * 書き戻す。試験で切り離したいときだけ渡す。
 	 */
-	private readonly vault: PiiVault
+	private readonly mapping: PiiMapping
 	private terms: PiiTerm[] | undefined
 	private loadedFrom: string | undefined
 	private troubles: string[] = []
@@ -129,8 +129,8 @@ export class TaskPiiMasker {
 	 *
 	 * 対応表だけは持ち越す。番号が振り直されると、前の応答の伏せ字が別の値を指す。
 	 */
-	constructor(read: (() => PiiMasking | undefined) | PiiMasking, vault: PiiVault = sessionVault()) {
-		this.vault = vault
+	constructor(read: (() => PiiMasking | undefined) | PiiMasking, mapping: PiiMapping = sessionMapping()) {
+		this.mapping = mapping
 		this.read = typeof read === "function" ? read : () => read
 	}
 
@@ -395,7 +395,7 @@ export class TaskPiiMasker {
 		/** シークレットモードが入っていたか。切のときは呼び出し側も何も出さない。 */
 		enabled: boolean
 	}> {
-		this.vault.setMaxEntries(this.settings.sessionVault?.maxEntries)
+		this.mapping.setMaxEntries(this.settings.sessionMapping?.maxEntries)
 		if (!this.enabled) {
 			return { systemPrompt, messages, counts: {}, troubles: [], enabled: false }
 		}
@@ -403,12 +403,12 @@ export class TaskPiiMasker {
 		const options = await this.options()
 		const properNouns = await this.properNouns(collectTexts(systemPrompt, messages))
 
-		const checkpoint = this.vault.checkpoint()
+		const checkpoint = this.mapping.checkpoint()
 		try {
-			const result = maskConversation(systemPrompt, messages, { ...options, properNouns }, this.vault, this.memo)
+			const result = maskConversation(systemPrompt, messages, { ...options, properNouns }, this.mapping, this.memo)
 			return { ...result, troubles: this.takeDictionaryTroubles(), enabled: true }
 		} catch (error) {
-			if (error instanceof PiiVaultLimitError) this.vault.rollback(checkpoint)
+			if (error instanceof PiiMappingLimitError) this.mapping.rollback(checkpoint)
 			throw error
 		}
 	}
@@ -423,7 +423,7 @@ export class TaskPiiMasker {
 	 * 伏せ字のままでは読めない。
 	 */
 	async maskPrompt(text: string): Promise<{ text: string; restore: (text: string) => string }> {
-		this.vault.setMaxEntries(this.settings.sessionVault?.maxEntries)
+		this.mapping.setMaxEntries(this.settings.sessionMapping?.maxEntries)
 		if (!this.enabled) {
 			return { text, restore: (one) => one }
 		}
@@ -433,12 +433,12 @@ export class TaskPiiMasker {
 		const options = await this.options()
 		const properNouns = await this.properNouns([text])
 
-		const checkpoint = this.vault.checkpoint()
+		const checkpoint = this.mapping.checkpoint()
 		try {
-			const plan = planMasking(text, { ...options, properNouns }, undefined, this.vault)
-			return { text: applyPlan(text, plan.edits), restore: (one) => this.vault.restore(one) }
+			const plan = planMasking(text, { ...options, properNouns }, undefined, this.mapping)
+			return { text: applyPlan(text, plan.edits), restore: (one) => this.mapping.restore(one) }
 		} catch (error) {
-			if (error instanceof PiiVaultLimitError) this.vault.rollback(checkpoint)
+			if (error instanceof PiiMappingLimitError) this.mapping.rollback(checkpoint)
 			throw error
 		}
 	}
@@ -454,7 +454,7 @@ export class TaskPiiMasker {
 		// 割り当て済みの伏せ字が残っている。切ったことを理由に戻さないと、`{{email-001}}`
 		// という文字列がそのままファイルへ書かれる。戻すのは割り当てたものだけなので
 		// （`FR-PII-08a`）、入っていなくても安全である。
-		return this.restores ? this.vault.restore(text) : text
+		return this.restores ? this.mapping.restore(text) : text
 	}
 
 	/**
@@ -465,7 +465,7 @@ export class TaskPiiMasker {
 	 * 割り当て済みの伏せ字は戻せる。
 	 */
 	restoreExplicitly(text: string): string {
-		return this.vault.restore(text)
+		return this.mapping.restore(text)
 	}
 
 	/**
@@ -485,13 +485,13 @@ export class TaskPiiMasker {
 	 *
 	 * 分けると、同じ形の伏せ字が別の値を指すことになる。
 	 */
-	get allocator(): PiiVault {
-		this.vault.setMaxEntries(this.settings.sessionVault?.maxEntries)
-		return this.vault
+	get allocator(): PiiMapping {
+		this.mapping.setMaxEntries(this.settings.sessionMapping?.maxEntries)
+		return this.mapping
 	}
 
 	/** これまでに伏せた値の数。0 のまま進んでいれば、設定が効いていない。 */
 	get maskedCount(): number {
-		return this.vault.size
+		return this.mapping.size
 	}
 }

@@ -33,12 +33,12 @@ export type PiiMasking = {
 		mode?: FileToolMode
 	}
 	/** メモリ内で共有する対応表の安全上限。 */
-	sessionVault?: {
+	sessionMapping?: {
 		/** 登録できる対応数。0 は無制限。 */
 		maxEntries?: number
 	}
 	/** ファイルごとに保存する対応表の保持条件。 */
-	fileVault?: {
+	fileMapping?: {
 		/** 最終利用からの保持日数。0 は時間による期限なし。 */
 		retentionDays?: number
 		maxFiles?: number

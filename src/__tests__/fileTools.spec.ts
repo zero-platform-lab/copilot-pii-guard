@@ -4,7 +4,7 @@ import * as vscode from "vscode"
 
 import { FILE_TOOLS, FILE_TOOL_ACCESS, runFileTool, writeRevisionMatches, type FileToolHost } from "../fileTools"
 import { TaskPiiMasker } from "../pii/TaskPiiMasker"
-import { resetSessionVault } from "../pii/maskConversation"
+import { resetSessionMapping } from "../pii/maskConversation"
 import { unmaskText } from "../pii/maskText"
 
 vi.mock("../paths", () => ({ getGlobalAgentDirectory: () => "/w/存在しない" }))
@@ -22,7 +22,7 @@ function fakeHost(overrides: Partial<FileToolHost> = {}): FileToolHost {
 	}
 }
 
-beforeEach(() => resetSessionVault())
+beforeEach(() => resetSessionMapping())
 
 /** 偽物の作業場所を差し替える。実物では読み取り専用なので、型を外して書き換える。 */
 const setFolders = (value: unknown) => {
@@ -256,7 +256,7 @@ describe("PII Guardのファイル道具", () => {
 		expect(result).not.toContain("taro@corp.example")
 	})
 
-	it("File Vaultの伏せ字衝突を今回のSession Vault番号へ直して返す", async () => {
+	it("ファイル対応表の伏せ字衝突を今回のセッション対応表番号へ直して返す", async () => {
 		const masker = new TaskPiiMasker({ enabled: true } as never)
 		await masker.maskPrompt("bob@corp.example") // 今回の {{email-001}}
 		const prepareFile = vi.fn(async () => {
@@ -293,7 +293,7 @@ describe("PII Guardのファイル道具", () => {
 		expect(result).toContain("保存してください")
 	})
 
-	it("伏せ字のまま書いた対応を対象ファイルのFile Vaultへ渡す", async () => {
+	it("伏せ字のまま書いた対応を対象ファイルのファイル対応表へ渡す", async () => {
 		const masker = new TaskPiiMasker({ enabled: true } as never)
 		const recordFile = vi.fn(async () => true)
 
@@ -309,7 +309,7 @@ describe("PII Guardのファイル道具", () => {
 		])
 	})
 
-	it("書込成功後にFile Vaultだけ失敗した場合は復元不能になることを返す", async () => {
+	it("書込成功後にファイル対応表だけ失敗した場合は復元不能になることを返す", async () => {
 		const masker = new TaskPiiMasker({ enabled: true } as never)
 
 		const result = await runFileTool(
@@ -350,7 +350,7 @@ describe("PII Guardのファイル道具", () => {
 		)
 	})
 
-	it("元の値を書いた場合はFile Vaultへ不要な対応を追加しない", async () => {
+	it("元の値を書いた場合はファイル対応表へ不要な対応を追加しない", async () => {
 		const masker = new TaskPiiMasker({ enabled: true } as never)
 		const recordFile = vi.fn(async () => true)
 
@@ -364,7 +364,7 @@ describe("PII Guardのファイル道具", () => {
 		expect(recordFile).not.toHaveBeenCalled()
 	})
 
-	it("書込前にもFile Vaultを取り込み、衝突した伏せ字を正しく復元する", async () => {
+	it("書込前にもファイル対応表を取り込み、衝突した伏せ字を正しく復元する", async () => {
 		const written: string[] = []
 		const masker = new TaskPiiMasker({ enabled: true } as never)
 		await masker.maskPrompt("bob@corp.example")

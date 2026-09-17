@@ -41,16 +41,16 @@ import { PII_KINDS, type PiiKind } from "./types"
  * **番号を持つのはここである。** 置き換えの側で番号を振ると、要求ごとに 1 から振り直され、
  * 同じ番号が別の値へ結び付く。
  */
-export const DEFAULT_SESSION_VAULT_MAX_ENTRIES = 10_000
+export const DEFAULT_SESSION_MAPPING_MAX_ENTRIES = 10_000
 
-export class PiiVaultLimitError extends Error {
+export class PiiMappingLimitError extends Error {
 	constructor() {
-		super("Session Vault reached its configured entry limit")
-		this.name = "PiiVaultLimitError"
+		super("session mapping reached its configured entry limit")
+		this.name = "PiiMappingLimitError"
 	}
 }
 
-export class PiiVault implements PlaceholderAllocator {
+export class PiiMapping implements PlaceholderAllocator {
 	/**
 	 * 割り当ての本体は `createAllocator` を使う。
 	 *
@@ -59,10 +59,10 @@ export class PiiVault implements PlaceholderAllocator {
 	 */
 	private readonly allocator = createAllocator()
 	private currentRevision = 0
-	private maxEntries = DEFAULT_SESSION_VAULT_MAX_ENTRIES
+	private maxEntries = DEFAULT_SESSION_MAPPING_MAX_ENTRIES
 
 	setMaxEntries(value: number | undefined): void {
-		this.maxEntries = Number.isInteger(value) && Number(value) >= 0 ? Number(value) : DEFAULT_SESSION_VAULT_MAX_ENTRIES
+		this.maxEntries = Number.isInteger(value) && Number(value) >= 0 ? Number(value) : DEFAULT_SESSION_MAPPING_MAX_ENTRIES
 	}
 
 	private existing(kind: PiiKind, value: string): string | undefined {
@@ -74,7 +74,7 @@ export class PiiVault implements PlaceholderAllocator {
 	}
 
 	private assertCapacity(additions = 1): void {
-		if (this.maxEntries > 0 && this.size + additions > this.maxEntries) throw new PiiVaultLimitError()
+		if (this.maxEntries > 0 && this.size + additions > this.maxEntries) throw new PiiMappingLimitError()
 	}
 
 	/** 伏せ字 → 元の値。割り当て係としてもこの表を差し出す。 */
@@ -180,14 +180,14 @@ export class PiiVault implements PlaceholderAllocator {
  * **ディスクへは書かない。** 書けば伏せた値そのものを保存することになり、伏せた意味が
  * 無くなる。本製品を終えれば消える（`FR-PII-20b`）。
  */
-let shared: PiiVault | undefined
+let shared: PiiMapping | undefined
 
-export function sessionVault(): PiiVault {
-	return (shared ??= new PiiVault())
+export function sessionMapping(): PiiMapping {
+	return (shared ??= new PiiMapping())
 }
 
 /** 試験のために捨てる。本番では呼ばない。 */
-export function resetSessionVault(): void {
+export function resetSessionMapping(): void {
 	shared = undefined
 }
 
@@ -216,8 +216,8 @@ export type MaskConversationResult = {
 export type MaskMemo = Map<string, { text: string; counts: Partial<Record<PiiKind, number>> }> & {
 	/** 覚えている文字数。上限を測るために持つ。 */
 	bytes?: number
-	/** この覚え書きを作ったVaultの世代。 */
-	vaultRevision?: number
+	/** この覚え書きを作った対応表の世代。 */
+	mappingRevision?: number
 }
 
 /**
@@ -232,21 +232,21 @@ export function maskConversation(
 	systemPrompt: string,
 	messages: readonly AgentMessage[],
 	options: MaskOptions = {},
-	vault?: PiiVault,
+	mapping?: PiiMapping,
 	memo?: MaskMemo,
 ): MaskConversationResult {
 	// **部分ごとに置き換える。** 割り当て係だけを共有する。連結してから置き換えると、
 	// 区切りをまたいだ一致が起きる（住所の照合は空白も飲み込む）。またいだ分は片方が
 	// 伏せられないまま送られ、対応表には区切りを含む値が入る。
-	const allocator = vault ?? createAllocator()
+	const allocator = mapping ?? createAllocator()
 	const counts: Partial<Record<PiiKind, number>> = {}
 
-	// Vaultを消去したあとに古い伏せ字化結果を返すと、その伏せ字はもう復元できない。
+	// 対応表を消去したあとに古い伏せ字化結果を返すと、その伏せ字はもう復元できない。
 	// 世代が変わったときだけ覚え書きを捨て、次の番号で伏せ直す。
-	if (memo && vault && memo.vaultRevision !== vault.revision) {
+	if (memo && mapping && memo.mappingRevision !== mapping.revision) {
 		memo.clear()
 		memo.bytes = 0
-		memo.vaultRevision = vault.revision
+		memo.mappingRevision = mapping.revision
 	}
 
 	const add = (from: Partial<Record<PiiKind, number>>) => {

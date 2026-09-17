@@ -8,9 +8,9 @@ import * as vscode from "vscode"
 import { TaskPiiMasker } from "./pii/TaskPiiMasker"
 import { checkSecretsInActiveEditor, maskSecretsInActiveEditor, restoreSecretsInActiveEditor } from "./pii/maskEditor"
 import { addSelectionToDictionary, exportDictionary } from "./pii/dictionaryEditor"
-import { PiiVaultLimitError, sessionVault } from "./pii/maskConversation"
-import { clearSessionVault } from "./pii/sessionVaultEditor"
-import { FileVaultController } from "./pii/fileVault"
+import { PiiMappingLimitError, sessionMapping } from "./pii/maskConversation"
+import { clearSessionMapping } from "./pii/sessionMappingEditor"
+import { FileMappingController } from "./pii/fileMapping"
 import { createHandler } from "./participant"
 import { disposeFileToolPreviews } from "./fileTools"
 import { readSettings } from "./settings"
@@ -32,8 +32,8 @@ function piiMasker(): TaskPiiMasker {
 
 export function activate(context: vscode.ExtensionContext): void {
 	context.subscriptions.push({ dispose: disposeFileToolPreviews })
-	const fileVault = new FileVaultController(context)
-	context.subscriptions.push(...fileVault.start())
+	const fileMapping = new FileMappingController(context)
+	context.subscriptions.push(...fileMapping.start())
 	const participant = vscode.chat.createChatParticipant(
 		"pii-guard.mask",
 		createHandler({
@@ -41,9 +41,9 @@ export function activate(context: vscode.ExtensionContext): void {
 			isEnabled: () => readSettings().enabled !== false,
 			restoreFileWrites: () => readSettings().fileWrites?.restore === true,
 			fileToolMode: () => readSettings().fileTools?.mode ?? "confirmEdit",
-			prepareFileVault: (path, masker) => fileVault.prepareToolPath(path, masker.allocator),
-			prepareReferenceVault: (uri, masker) => fileVault.prepareReference(uri, masker.allocator),
-			recordFileVault: (path, entries) => fileVault.recordToolPath(path, entries),
+			prepareFileMapping: (path, masker) => fileMapping.prepareToolPath(path, masker.allocator),
+			prepareReferenceMapping: (uri, masker) => fileMapping.prepareReference(uri, masker.allocator),
+			recordFileMapping: (path, entries) => fileMapping.recordToolPath(path, entries),
 		}),
 	)
 	participant.iconPath = new vscode.ThemeIcon("shield")
@@ -54,35 +54,35 @@ export function activate(context: vscode.ExtensionContext): void {
 			checkSecretsInActiveEditor(readSettings(), (texts) => piiMasker().properNounsFor(texts)),
 		),
 		vscode.commands.registerCommand("piiGuard.maskFile", async () => {
-			const vault = sessionVault()
-			vault.setMaxEntries(readSettings().sessionVault?.maxEntries)
-			const checkpoint = vault.checkpoint()
+			const mapping = sessionMapping()
+			mapping.setMaxEntries(readSettings().sessionMapping?.maxEntries)
+			const checkpoint = mapping.checkpoint()
 			const uri = vscode.window.activeTextEditor?.document.uri
-			if (uri && !(await fileVault.prepare(uri, vault))) return
+			if (uri && !(await fileMapping.prepare(uri, mapping))) return
 			try {
 				await maskSecretsInActiveEditor(
 					readSettings(),
-					vault,
+					mapping,
 					(texts) => piiMasker().properNounsFor(texts),
 					async (uri, entries) => {
-						await fileVault.record(uri, entries)
+						await fileMapping.record(uri, entries)
 					},
 				)
 			} catch (error) {
-				if (!(error instanceof PiiVaultLimitError)) throw error
-				vault.rollback(checkpoint)
-				await vscode.window.showErrorMessage(t("common:pii.sessionVault.maxEntries"))
+				if (!(error instanceof PiiMappingLimitError)) throw error
+				mapping.rollback(checkpoint)
+				await vscode.window.showErrorMessage(t("common:pii.sessionMapping.maxEntries"))
 			}
 		}),
 		vscode.commands.registerCommand("piiGuard.restoreFile", () =>
-			restoreSecretsInActiveEditor((text, uri) => fileVault.restore(uri, text, (one) => sessionVault().restore(one))),
+			restoreSecretsInActiveEditor((text, uri) => fileMapping.restore(uri, text, (one) => sessionMapping().restore(one))),
 		),
-		vscode.commands.registerCommand("piiGuard.clearSessionVault", clearSessionVault),
-		vscode.commands.registerCommand("piiGuard.enableFileVault", () => fileVault.enable(sessionVault())),
-		vscode.commands.registerCommand("piiGuard.disableFileVault", () => fileVault.disable()),
-		vscode.commands.registerCommand("piiGuard.fileVaultStatus", () => fileVault.status()),
-		vscode.commands.registerCommand("piiGuard.clearSelectedFileVaults", () => fileVault.clearSelected()),
-		vscode.commands.registerCommand("piiGuard.clearAllFileVaults", () => fileVault.clearAll(sessionVault())),
+		vscode.commands.registerCommand("piiGuard.clearSessionMapping", clearSessionMapping),
+		vscode.commands.registerCommand("piiGuard.enableFileMapping", () => fileMapping.enable(sessionMapping())),
+		vscode.commands.registerCommand("piiGuard.disableFileMapping", () => fileMapping.disable()),
+		vscode.commands.registerCommand("piiGuard.fileMappingStatus", () => fileMapping.status()),
+		vscode.commands.registerCommand("piiGuard.clearSelectedFileMappings", () => fileMapping.clearSelected()),
+		vscode.commands.registerCommand("piiGuard.clearAllFileMappings", () => fileMapping.clearAll(sessionMapping())),
 		vscode.commands.registerCommand("piiGuard.addToDictionary", () =>
 			addSelectionToDictionary(readSettings()),
 		),

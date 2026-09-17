@@ -11,7 +11,7 @@
 import * as vscode from "vscode"
 
 import type { TaskPiiMasker } from "./pii/TaskPiiMasker"
-import { PiiVaultLimitError } from "./pii/maskConversation"
+import { PiiMappingLimitError } from "./pii/maskConversation"
 import { createStreamRestorer } from "./stream"
 import { t } from "./messages"
 import type { AgentMessage, FileToolMode } from "./types"
@@ -109,15 +109,15 @@ export type ParticipantDeps = {
 	restoreFileWrites?: () => boolean
 	/** ファイル道具の権限。未指定は現行互換の confirmEdit。 */
 	fileToolMode?: () => FileToolMode
-	/** ファイル道具が扱うファイルのFile Vaultを今回のSession Vaultへ取り込む。 */
-	prepareFileVault?: (path: string, masker: TaskPiiMasker) => Promise<(text: string) => string>
-	/** 添付ファイルや選択範囲のFile Vaultを取り込み、衝突した伏せ字を置き換える。 */
-	prepareReferenceVault?: (
+	/** ファイル道具が扱うファイルのファイル対応表を今回のセッション対応表へ取り込む。 */
+	prepareFileMapping?: (path: string, masker: TaskPiiMasker) => Promise<(text: string) => string>
+	/** 添付ファイルや選択範囲のファイル対応表を取り込み、衝突した伏せ字を置き換える。 */
+	prepareReferenceMapping?: (
 		uri: vscode.Uri,
 		masker: TaskPiiMasker,
 	) => Promise<(text: string) => string>
-	/** ファイル道具が伏せ字のまま書いた対応をFile Vaultへ保存する。 */
-	recordFileVault?: (
+	/** ファイル道具が伏せ字のまま書いた対応をファイル対応表へ保存する。 */
+	recordFileMapping?: (
 		path: string,
 		entries: readonly (readonly [string, string])[],
 	) => Promise<boolean>
@@ -157,7 +157,7 @@ function isUri(value: unknown): value is vscode.Uri {
 export async function readReferences(
 	references: readonly vscode.ChatPromptReference[],
 	openTextDocument: (uri: vscode.Uri) => Thenable<vscode.TextDocument> = vscode.workspace.openTextDocument,
-	prepareVault?: (uri: vscode.Uri) => Promise<(text: string) => string>,
+	prepareMapping?: (uri: vscode.Uri) => Promise<(text: string) => string>,
 ): Promise<{ texts: ReferenceText[]; failures: string[] }> {
 	const texts: ReferenceText[] = []
 	const failures: string[] = []
@@ -178,7 +178,7 @@ export async function readReferences(
 
 		try {
 			const document = await openTextDocument(uri)
-			const remap = prepareVault ? await prepareVault(uri) : (text: string) => text
+			const remap = prepareMapping ? await prepareMapping(uri) : (text: string) => text
 			texts.push({ label: uri.path, text: remap(document.getText(location?.range)) })
 		} catch {
 			failures.push(uri.path)
@@ -215,14 +215,14 @@ function responseText(turn: vscode.ChatResponseTurn): string {
 async function historyMessages(
 	history: vscode.ChatContext["history"],
 	openTextDocument: (uri: vscode.Uri) => Thenable<vscode.TextDocument>,
-	prepareVault?: (uri: vscode.Uri) => Promise<(text: string) => string>,
+	prepareMapping?: (uri: vscode.Uri) => Promise<(text: string) => string>,
 ): Promise<{ messages: AgentMessage[]; failures: string[] }> {
 	const messages: AgentMessage[] = []
 	const failures: string[] = []
 
 	for (const turn of history) {
 		if ("prompt" in turn) {
-			const references = await readReferences(turn.references ?? [], openTextDocument, prepareVault)
+			const references = await readReferences(turn.references ?? [], openTextDocument, prepareMapping)
 			messages.push({
 				type: "message",
 				role: "user",
@@ -351,23 +351,23 @@ export function createHandler(deps: ParticipantDeps): vscode.ChatRequestHandler 
 			runFileTool(name, input, masker, {
 				restoreWrites,
 				token,
-				prepareFile: deps.prepareFileVault
-					? (path) => deps.prepareFileVault!(path, masker)
+				prepareFile: deps.prepareFileMapping
+					? (path) => deps.prepareFileMapping!(path, masker)
 					: undefined,
-				recordFile: deps.recordFileVault,
+				recordFile: deps.recordFileMapping,
 			}))
 
 	return async (request, context, stream, token) => {
 		const masker = deps.masker()
 		const enabled = deps.isEnabled()
-		const referenceVaults = new Map<string, Promise<(text: string) => string>>()
-		const prepareReferenceVault = enabled && deps.prepareReferenceVault
+		const referenceMappings = new Map<string, Promise<(text: string) => string>>()
+		const prepareReferenceMapping = enabled && deps.prepareReferenceMapping
 			? (uri: vscode.Uri) => {
 					const key = `${uri.scheme}\0${uri.authority}\0${uri.path}\0${uri.query}`
-					let prepared = referenceVaults.get(key)
+					let prepared = referenceMappings.get(key)
 					if (!prepared) {
-						prepared = deps.prepareReferenceVault!(uri, masker)
-						referenceVaults.set(key, prepared)
+						prepared = deps.prepareReferenceMapping!(uri, masker)
+						referenceMappings.set(key, prepared)
 					}
 					return prepared
 				}
@@ -378,8 +378,8 @@ export function createHandler(deps: ParticipantDeps): vscode.ChatRequestHandler 
 		const availableTools = fileToolsForMode(tools, effectiveFileToolMode)
 		const availableToolNames = new Set(availableTools.map((tool) => tool.name))
 		let fileAccessDecision: "approved" | "denied" | undefined
-		const history = await historyMessages(context.history ?? [], openTextDocument, prepareReferenceVault)
-		const references = await readReferences(request.references ?? [], openTextDocument, prepareReferenceVault)
+		const history = await historyMessages(context.history ?? [], openTextDocument, prepareReferenceMapping)
+		const references = await readReferences(request.references ?? [], openTextDocument, prepareReferenceMapping)
 		const messages: AgentMessage[] = [
 			...history.messages,
 			{
@@ -389,8 +389,8 @@ export function createHandler(deps: ParticipantDeps): vscode.ChatRequestHandler 
 			},
 		]
 		const masked = await masker.maskForRequest("", messages).catch((error: unknown) => {
-			if (!(error instanceof PiiVaultLimitError)) throw error
-			stream.markdown(`> ⚠️ ${t("common:pii.sessionVault.maxEntries")}\n\n`)
+			if (!(error instanceof PiiMappingLimitError)) throw error
+			stream.markdown(`> ⚠️ ${t("common:pii.sessionMapping.maxEntries")}\n\n`)
 			return undefined
 		})
 		if (!masked) return
