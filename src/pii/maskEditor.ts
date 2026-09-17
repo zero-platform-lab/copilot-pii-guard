@@ -76,7 +76,10 @@ async function inspectActiveEditor(
 	const selection = editor.selection
 	const range = selection.isEmpty
 		? undefined
-		: { start: document.offsetAt(selection.start), end: document.offsetAt(selection.end) }
+		: {
+				start: document.offsetAt(selection.start),
+				end: document.offsetAt(selection.end),
+			}
 	const options = {
 		terms: [...(settings.terms ?? []), ...dictionary.terms],
 		kinds: settings.kinds,
@@ -177,7 +180,7 @@ export async function maskSecretsInActiveEditor(
 	 * 渡すので、取りこぼしがそのまま外へ出る。
 	 */
 	properNounsFor?: (texts: readonly string[]) => Promise<MaskOptions["properNouns"]>,
-	/** File Vaultが有効なファイルだけ、適用後の対応を暗号化保存する。 */
+	/** File Vaultが有効なファイルだけ、適用後の対応を保存する。 */
 	persist?: (uri: vscode.Uri, entries: readonly (readonly [string, string])[]) => Promise<void>,
 ): Promise<void> {
 	const inspected = await inspectActiveEditor(settings, properNounsFor)
