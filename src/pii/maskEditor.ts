@@ -128,7 +128,7 @@ export async function restoreSecretsInActiveEditor(
 
 	if (!unmask) {
 		// 会話が始まっていないか、終わっている。対応表が無いので戻しようがない。
-		await vscode.window.showWarningMessage(t("common:pii.noVault"))
+		await vscode.window.showWarningMessage(t("common:pii.noMapping"))
 		return
 	}
 
@@ -137,7 +137,7 @@ export async function restoreSecretsInActiveEditor(
 	try {
 		restored = await unmask(text, editor.document.uri)
 	} catch {
-		await vscode.window.showErrorMessage(t("common:pii.fileVault.failed"))
+		await vscode.window.showErrorMessage(t("common:pii.fileMapping.failed"))
 		return
 	}
 	if (restored === text) {
@@ -180,7 +180,7 @@ export async function maskSecretsInActiveEditor(
 	 * 渡すので、取りこぼしがそのまま外へ出る。
 	 */
 	properNounsFor?: (texts: readonly string[]) => Promise<MaskOptions["properNouns"]>,
-	/** File Vaultが有効なファイルだけ、適用後の対応を保存する。 */
+	/** ファイル対応表が有効なファイルだけ、適用後の対応を保存する。 */
 	persist?: (uri: vscode.Uri, entries: readonly (readonly [string, string])[]) => Promise<void>,
 ): Promise<void> {
 	const inspected = await inspectActiveEditor(settings, properNounsFor)
@@ -238,7 +238,7 @@ export async function maskSecretsInActiveEditor(
 	try {
 		await persist?.(document.uri, assigned)
 	} catch {
-		await vscode.window.showErrorMessage(t("common:pii.fileVault.saveFailed"))
+		await vscode.window.showErrorMessage(t("common:pii.fileMapping.saveFailed"))
 	}
 
 	await vscode.window.showInformationMessage(t("common:pii.replaced", { summary: describeCounts(counts) }))

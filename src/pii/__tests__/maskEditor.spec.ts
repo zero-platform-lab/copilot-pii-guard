@@ -180,7 +180,7 @@ describe("maskSecretsInActiveEditor", () => {
 		)
 	})
 
-	it("編集適用後にFile Vault用の対応を渡す", async () => {
+	it("編集適用後にファイル対応表用の対応を渡す", async () => {
 		mocks.activeTextEditor = editorWith("taro@corp.example")
 		answerConfirm()
 		const persist = vi.fn(async () => undefined)
@@ -193,7 +193,7 @@ describe("maskSecretsInActiveEditor", () => {
 		)
 	})
 
-	it("編集に失敗した場合はFile Vaultへ保存しない", async () => {
+	it("編集に失敗した場合はファイル対応表へ保存しない", async () => {
 		mocks.activeTextEditor = editorWith("taro@corp.example")
 		answerConfirm()
 		mocks.applyEdit.mockResolvedValueOnce(false)
@@ -302,7 +302,7 @@ describe("restoreSecretsInActiveEditor（FR-PII-20）", () => {
 		await restoreSecretsInActiveEditor(undefined)
 
 		// 会話が終わると対応表は消える。黙って何もしないと、戻ったと思われる。
-		expect(mocks.showWarningMessage).toHaveBeenCalledExactlyOnceWith("common:pii.noVault")
+		expect(mocks.showWarningMessage).toHaveBeenCalledExactlyOnceWith("common:pii.noMapping")
 		expect(mocks.applyEdit).not.toHaveBeenCalled()
 	})
 

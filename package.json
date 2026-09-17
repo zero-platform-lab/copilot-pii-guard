@@ -65,40 +65,40 @@
 					"default": "confirmEdit",
 					"markdownDescription": "`@mask` に渡すファイル道具の権限です。伏せ字化が切のときは、この設定にかかわらず `off` になります。"
 				},
-				"piiGuard.fileVault.retentionDays": {
+				"piiGuard.fileMapping.retentionDays": {
 					"type": "integer",
 					"default": 30,
 					"minimum": 0,
 					"maximum": 3650,
-					"markdownDescription": "File Vaultを最終利用から保持する日数です。`0` は時間による期限なしです。対象ファイルが無くなった場合は、この設定にかかわらず削除します。"
+					"markdownDescription": "ファイル対応表を最終利用から保持する日数です。`0` は時間による期限なしです。対象ファイルが無くなった場合は、この設定にかかわらず削除します。"
 				},
-				"piiGuard.sessionVault.maxEntries": {
+				"piiGuard.sessionMapping.maxEntries": {
 					"type": "integer",
 					"default": 10000,
 					"minimum": 0,
 					"maximum": 1000000,
-					"markdownDescription": "Session Vaultへ登録できる対応数の上限です。`0` は無制限です。"
+					"markdownDescription": "セッション対応表へ登録できる対応数の上限です。`0` は無制限です。"
 				},
-				"piiGuard.fileVault.maxFiles": {
+				"piiGuard.fileMapping.maxFiles": {
 					"type": "integer",
 					"default": 100,
 					"minimum": 0,
 					"maximum": 10000,
-					"markdownDescription": "File Vaultを有効にできるファイル数の上限です。`0` は無制限です。"
+					"markdownDescription": "ファイル対応表を有効にできるファイル数の上限です。`0` は無制限です。"
 				},
-				"piiGuard.fileVault.maxEntriesPerFile": {
+				"piiGuard.fileMapping.maxEntriesPerFile": {
 					"type": "integer",
 					"default": 1000,
 					"minimum": 0,
 					"maximum": 100000,
-					"markdownDescription": "1ファイルのFile Vaultへ保存できる対応数の上限です。`0` は無制限です。"
+					"markdownDescription": "1ファイルのファイル対応表へ保存できる対応数の上限です。`0` は無制限です。"
 				},
-				"piiGuard.fileVault.maxBytes": {
+				"piiGuard.fileMapping.maxBytes": {
 					"type": "integer",
 					"default": 5242880,
 					"minimum": 0,
 					"maximum": 104857600,
-					"markdownDescription": "File Vault全体の暗号化前データ量の上限（バイト）です。`0` は無制限です。"
+					"markdownDescription": "ファイル対応表全体のデータ量の上限（バイト）です。`0` は無制限です。"
 				},
 				"piiGuard.kinds": {
 					"type": "object",
@@ -336,33 +336,33 @@
 				"category": "PII Guard"
 			},
 			{
-				"command": "piiGuard.clearSessionVault",
-				"title": "Session Vaultを消去する",
+				"command": "piiGuard.clearSessionMapping",
+				"title": "セッション対応表を消去する",
 				"category": "PII Guard"
 			},
 			{
-				"command": "piiGuard.enableFileVault",
-				"title": "このファイルのFile Vaultを有効にする",
+				"command": "piiGuard.enableFileMapping",
+				"title": "このファイルのファイル対応表を有効にする",
 				"category": "PII Guard"
 			},
 			{
-				"command": "piiGuard.disableFileVault",
-				"title": "このファイルのFile Vaultを消去する",
+				"command": "piiGuard.disableFileMapping",
+				"title": "このファイルのファイル対応表を消去する",
 				"category": "PII Guard"
 			},
 			{
-				"command": "piiGuard.fileVaultStatus",
-				"title": "このファイルのFile Vault状態を確かめる",
+				"command": "piiGuard.fileMappingStatus",
+				"title": "このファイルのファイル対応表状態を確かめる",
 				"category": "PII Guard"
 			},
 			{
-				"command": "piiGuard.clearSelectedFileVaults",
-				"title": "選んだFile Vaultを消去する",
+				"command": "piiGuard.clearSelectedFileMappings",
+				"title": "選んだファイル対応表を消去する",
 				"category": "PII Guard"
 			},
 			{
-				"command": "piiGuard.clearAllFileVaults",
-				"title": "すべてのFile VaultとSession Vaultを消去する",
+				"command": "piiGuard.clearAllFileMappings",
+				"title": "すべてのファイル対応表とセッション対応表を消去する",
 				"category": "PII Guard"
 			},
 			{
@@ -407,16 +407,16 @@
 					"group": "1_mask@3"
 				},
 				{
-					"command": "piiGuard.enableFileVault",
-					"group": "3_vault@1"
+					"command": "piiGuard.enableFileMapping",
+					"group": "3_mapping@1"
 				},
 				{
-					"command": "piiGuard.disableFileVault",
-					"group": "3_vault@2"
+					"command": "piiGuard.disableFileMapping",
+					"group": "3_mapping@2"
 				},
 				{
-					"command": "piiGuard.fileVaultStatus",
-					"group": "3_vault@3"
+					"command": "piiGuard.fileMappingStatus",
+					"group": "3_mapping@3"
 				},
 				{
 					"command": "piiGuard.addToDictionary",

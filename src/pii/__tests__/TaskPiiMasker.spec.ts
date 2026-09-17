@@ -60,11 +60,11 @@ import {
 	NER_TIME_BUDGET,
 	TaskPiiMasker,
 } from "../TaskPiiMasker"
-import { PiiVaultLimitError, resetSessionVault, sessionVault } from "../maskConversation"
+import { PiiMappingLimitError, resetSessionMapping, sessionMapping } from "../maskConversation"
 
 // **対応表は本製品で 1 つを共有する（`FR-PII-02b`）。** 捨てないと、前の試験で
 // 割り当てた番号が残り、`{{email-001}}` を期待する試験が `002` を見て落ちる。
-beforeEach(() => resetSessionVault())
+beforeEach(() => resetSessionMapping())
 
 const message = (content: string): AgentMessage => ({ type: "message", role: "user", content }) as AgentMessage
 
@@ -462,16 +462,16 @@ describe("対応表は本製品で 1 つを共有する（FR-PII-02b）", () => 
 		const masker = new TaskPiiMasker({ enabled: true, kinds: ["email"] })
 		await masker.maskForRequest("", [message("taro@corp.example")])
 
-		expect(sessionVault().restore("宛先は {{email-001}} です")).toBe("宛先は taro@corp.example です")
+		expect(sessionMapping().restore("宛先は {{email-001}} です")).toBe("宛先は taro@corp.example です")
 	})
 
 	it("捨てるまでは同じものを返す", () => {
-		expect(sessionVault()).toBe(sessionVault())
+		expect(sessionMapping()).toBe(sessionMapping())
 	})
 
 	it("捨てれば番号は 1 から始まる", async () => {
 		await new TaskPiiMasker({ enabled: true, kinds: ["email"] }).maskForRequest("", [message("taro@corp.example")])
-		resetSessionVault()
+		resetSessionMapping()
 
 		const result = await new TaskPiiMasker({ enabled: true, kinds: ["email"] }).maskForRequest("", [
 			message("jiro@corp.example"),
@@ -579,7 +579,7 @@ describe("第 2 層が投げても、第 1 層は動かす（FR-PII-23b）", () 
 	})
 })
 
-describe("Session Vault の上限に当たったとき", () => {
+describe("セッション対応表 の上限に当たったとき", () => {
 	it("途中まで割り当てた番号を巻き戻す", async () => {
 		// **巻き戻さないと、番号だけ進んで対応表が欠ける。** 欠けた番号を含む文が
 		// どこかに残っていれば、その伏せ字は二度と戻らない。
@@ -588,14 +588,14 @@ describe("Session Vault の上限に当たったとき", () => {
 		const masker = new TaskPiiMasker({
 			enabled: true,
 			kinds: ["email"],
-			sessionVault: { maxEntries: 3 },
+			sessionMapping: { maxEntries: 3 },
 		} as never)
 
 		await masker.maskPrompt("a@corp.example と b@corp.example")
 		expect(masker.allocator.size).toBe(2)
 
 		// 1 件目は入り（3 件目）、2 件目で上限に当たる。
-		await expect(masker.maskPrompt("c@corp.example と d@corp.example")).rejects.toThrow(PiiVaultLimitError)
+		await expect(masker.maskPrompt("c@corp.example と d@corp.example")).rejects.toThrow(PiiMappingLimitError)
 
 		// **途中まで入れたものが残っていない。** 残ると、番号だけ進んで対応表が欠ける。
 		expect(masker.allocator.size).toBe(2)

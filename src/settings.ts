@@ -53,14 +53,14 @@ export function readSettings(): PiiMasking {
 		fileTools: {
 			mode: fileToolMode(config.get<unknown>("fileTools.mode")),
 		},
-		sessionVault: {
-			maxEntries: config.get<number>("sessionVault.maxEntries"),
+		sessionMapping: {
+			maxEntries: config.get<number>("sessionMapping.maxEntries"),
 		},
-		fileVault: {
-			retentionDays: config.get<number>("fileVault.retentionDays"),
-			maxFiles: config.get<number>("fileVault.maxFiles"),
-			maxEntriesPerFile: config.get<number>("fileVault.maxEntriesPerFile"),
-			maxBytes: config.get<number>("fileVault.maxBytes"),
+		fileMapping: {
+			retentionDays: config.get<number>("fileMapping.retentionDays"),
+			maxFiles: config.get<number>("fileMapping.maxFiles"),
+			maxEntriesPerFile: config.get<number>("fileMapping.maxEntriesPerFile"),
+			maxBytes: config.get<number>("fileMapping.maxBytes"),
 		},
 		kinds: checkedNames<NonNullable<PiiMasking["kinds"]>[number]>(
 			config.get<Record<string, boolean>>("kinds"),

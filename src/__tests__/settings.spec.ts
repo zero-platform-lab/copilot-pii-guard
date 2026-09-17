@@ -78,21 +78,21 @@ describe("チェックの形を、名前の並びへ変える", () => {
 		expect(withConfig({ "fileTools.mode": "alwaysWrite" }).fileTools?.mode).toBe("off")
 	})
 
-	it("File Vaultの保持日数を読む", () => {
-		expect(withConfig({ "fileVault.retentionDays": 30 }).fileVault?.retentionDays).toBe(30)
+	it("ファイル対応表の保持日数を読む", () => {
+		expect(withConfig({ "fileMapping.retentionDays": 30 }).fileMapping?.retentionDays).toBe(30)
 	})
 
-	it("Session Vaultの対応数上限を読む", () => {
-		expect(withConfig({ "sessionVault.maxEntries": 10_000 }).sessionVault?.maxEntries).toBe(10_000)
+	it("セッション対応表の対応数上限を読む", () => {
+		expect(withConfig({ "sessionMapping.maxEntries": 10_000 }).sessionMapping?.maxEntries).toBe(10_000)
 	})
 
-	it("File Vaultの容量上限を読む", () => {
+	it("ファイル対応表の容量上限を読む", () => {
 		expect(
 			withConfig({
-				"fileVault.maxFiles": 100,
-				"fileVault.maxEntriesPerFile": 1000,
-				"fileVault.maxBytes": 5_242_880,
-			}).fileVault,
+				"fileMapping.maxFiles": 100,
+				"fileMapping.maxEntriesPerFile": 1000,
+				"fileMapping.maxBytes": 5_242_880,
+			}).fileMapping,
 		).toMatchObject({ maxFiles: 100, maxEntriesPerFile: 1000, maxBytes: 5_242_880 })
 	})
 })
@@ -122,8 +122,8 @@ describe("package.json と食い違わない", () => {
 		expect(declared.default).toBe("confirmEdit")
 	})
 
-	it("File Vaultの保持日数は30日が既定で、0日を許す", async () => {
-		const declared = (await manifestProperties())["piiGuard.fileVault.retentionDays"] as unknown as {
+	it("ファイル対応表の保持日数は30日が既定で、0日を許す", async () => {
+		const declared = (await manifestProperties())["piiGuard.fileMapping.retentionDays"] as unknown as {
 			default: number
 			minimum: number
 		}
