@@ -14,7 +14,12 @@ import {
 import { PiiVault, PiiVaultLimitError } from "./maskConversation"
 import { unmaskText } from "./maskText"
 
-type FileTarget = { identity: string; label: string; uri: vscode.Uri; text: string }
+type FileTarget = {
+	identity: string
+	label: string
+	uri: vscode.Uri
+	text: string
+}
 
 const DEFAULT_RETENTION_DAYS = 30
 
@@ -87,17 +92,13 @@ function labelForIdentity(identity: string): string {
 	return folders.length > 1 && folder ? `${folder.name}/${match[2]}` : match[2]
 }
 
-/** 利用者操作と暗号化ストアの境界。モデルからは呼ばない。 */
+/** 利用者操作と平文ストアの境界。モデルからは呼ばない。 */
 export class FileVaultController {
 	private readonly store: FileVaultStore | undefined
 
-	constructor(
-		context: Pick<vscode.ExtensionContext, "storageUri"> & {
-			secrets: Pick<vscode.SecretStorage, "get" | "store">
-		},
-	) {
+	constructor(context: Pick<vscode.ExtensionContext, "storageUri">) {
 		this.store = context.storageUri
-			? new FileVaultStore(context.storageUri, context.secrets, undefined, undefined, fileVaultLimits)
+			? new FileVaultStore(context.storageUri, undefined, undefined, fileVaultLimits)
 			: undefined
 	}
 
@@ -158,7 +159,12 @@ export class FileVaultController {
 		const uri = document.uri
 		const identity = fileVaultIdentity(uri)
 		if (!identity) return undefined
-		return { identity, label: vscode.workspace.asRelativePath(uri, true), uri, text: document.getText() }
+		return {
+			identity,
+			label: vscode.workspace.asRelativePath(uri, true),
+			uri,
+			text: document.getText(),
+		}
 	}
 
 	private async requireTarget(): Promise<FileTarget | undefined> {
@@ -183,7 +189,10 @@ export class FileVaultController {
 			if (existing) {
 				vault.importEntries(existing.entries)
 				await vscode.window.showInformationMessage(
-					t("common:pii.fileVault.alreadyEnabled", { file: target.label, count: existing.entries.length }),
+					t("common:pii.fileVault.alreadyEnabled", {
+						file: target.label,
+						count: existing.entries.length,
+					}),
 				)
 				return
 			}
@@ -194,7 +203,10 @@ export class FileVaultController {
 		const entries = [...vault.entries].filter(([placeholder]) => target.text.includes(placeholder))
 		const confirm = t("common:pii.fileVault.enable")
 		const answer = await vscode.window.showWarningMessage(
-			t("common:pii.fileVault.confirmEnable", { file: target.label, count: entries.length }),
+			t("common:pii.fileVault.confirmEnable", {
+				file: target.label,
+				count: entries.length,
+			}),
 			{ modal: true },
 			confirm,
 		)
@@ -203,7 +215,10 @@ export class FileVaultController {
 		try {
 			const record = await this.store.enable(target.identity, entries)
 			await vscode.window.showInformationMessage(
-				t("common:pii.fileVault.enabled", { file: target.label, count: record.entries.length }),
+				t("common:pii.fileVault.enabled", {
+					file: target.label,
+					count: record.entries.length,
+				}),
 			)
 		} catch (error) {
 			await vscode.window.showErrorMessage(errorMessage(error))
@@ -222,7 +237,10 @@ export class FileVaultController {
 			}
 			const confirm = t("common:pii.clearVault")
 			const answer = await vscode.window.showWarningMessage(
-				t("common:pii.fileVault.confirmDisable", { file: target.label, count: record.entries.length }),
+				t("common:pii.fileVault.confirmDisable", {
+					file: target.label,
+					count: record.entries.length,
+				}),
 				{ modal: true },
 				confirm,
 			)
@@ -242,7 +260,10 @@ export class FileVaultController {
 			const record = await this.store.inspect(target.identity)
 			await vscode.window.showInformationMessage(
 				record
-					? t("common:pii.fileVault.statusEnabled", { file: target.label, count: record.entries.length })
+					? t("common:pii.fileVault.statusEnabled", {
+							file: target.label,
+							count: record.entries.length,
+						})
 					: t("common:pii.fileVault.notEnabled", { file: target.label }),
 			)
 		} catch (error) {
@@ -264,7 +285,9 @@ export class FileVaultController {
 			}
 			const items = records.map((record) => ({
 				label: labelForIdentity(record.identity),
-				description: t("common:pii.fileVault.entryCount", { count: record.entries.length }),
+				description: t("common:pii.fileVault.entryCount", {
+					count: record.entries.length,
+				}),
 				identity: record.identity,
 				count: record.entries.length,
 			}))
@@ -323,14 +346,20 @@ export class FileVaultController {
 		const entries = selected.reduce((sum, item) => sum + item.count, 0)
 		const confirm = t("common:pii.clearVault")
 		const answer = await vscode.window.showWarningMessage(
-			t("common:pii.fileVault.confirmClearMany", { files: selected.length, count: entries }),
+			t("common:pii.fileVault.confirmClearMany", {
+				files: selected.length,
+				count: entries,
+			}),
 			{ modal: true },
 			confirm,
 		)
 		if (answer !== confirm) return
 		const removed = await this.store.deleteMany(selected.map((item) => item.identity))
 		await vscode.window.showInformationMessage(
-			t("common:pii.fileVault.clearedMany", { files: removed.files, count: removed.entries }),
+			t("common:pii.fileVault.clearedMany", {
+				files: removed.files,
+				count: removed.entries,
+			}),
 		)
 	}
 

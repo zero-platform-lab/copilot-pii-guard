@@ -15,7 +15,7 @@ const MESSAGES: Record<string, string> = {
 		"Session Vaultの対応数が設定上限に達したため、伏せ字化を停止しました。上限を増やすか、Session Vaultを消去してください。",
 	"common:pii.fileVault.enable": "有効にする",
 	"common:pii.fileVault.confirmEnable":
-		"{{file}}のFile Vaultを有効にします。対応 {{count}} 件を暗号化し、ワークスペース専用領域へ保存します。暗号鍵は別の安全な領域へ保存します。",
+		"{{file}}のFile Vaultを有効にします。対応 {{count}} 件をワークスペース専用領域へ保存します。",
 	"common:pii.fileVault.enabled": "{{file}}のFile Vaultを有効にしました（対応 {{count}} 件）。",
 	"common:pii.fileVault.alreadyEnabled": "{{file}}のFile Vaultはすでに有効です（対応 {{count}} 件）。",
 	"common:pii.fileVault.confirmDisable":
@@ -24,10 +24,9 @@ const MESSAGES: Record<string, string> = {
 	"common:pii.fileVault.notEnabled": "{{file}}のFile Vaultは無効です。",
 	"common:pii.fileVault.statusEnabled": "{{file}}のFile Vaultは有効です（対応 {{count}} 件）。",
 	"common:pii.fileVault.workspaceRequired": "File Vaultには、ワークスペース内の保存済みファイルが必要です。",
-	"common:pii.fileVault.missingKey": "File Vaultの暗号鍵が見つからないため、読込も上書きも停止しました。",
-	"common:pii.fileVault.corrupt": "File Vaultの改ざんまたは破損を検出したため、読込も上書きも停止しました。",
+	"common:pii.fileVault.corrupt": "File Vaultの破損を検出したため、読込も上書きも停止しました。",
 	"common:pii.fileVault.unsupported": "未対応形式のFile Vaultは読込も上書きもしません。",
-	"common:pii.fileVault.failed": "File Vaultを安全に読み込めませんでした。既存データは変更していません。",
+	"common:pii.fileVault.failed": "File Vaultを読み込めませんでした。既存データは変更していません。",
 	"common:pii.fileVault.saveFailed": "ファイルは伏せましたが、File Vaultを更新できませんでした。",
 	"common:pii.fileVault.maxFiles": "File Vaultのファイル数が設定上限に達したため、保存しませんでした。",
 	"common:pii.fileVault.maxEntries": "このファイルの対応数が設定上限に達したため、保存しませんでした。",
@@ -95,7 +94,5 @@ export function t(key: string, values: Record<string, unknown> = {}): string {
 	const template = MESSAGES[key]
 	if (template === undefined) return key
 
-	return template.replace(/\{\{(\w+)\}\}/g, (whole, name: string) =>
-		name in values ? String(values[name]) : whole,
-	)
+	return template.replace(/\{\{(\w+)\}\}/g, (whole, name: string) => (name in values ? String(values[name]) : whole))
 }

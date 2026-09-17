@@ -36,70 +36,42 @@ function memoryFileSystem() {
 	}
 }
 
-function secretStorage() {
-	const values = new Map<string, string>()
-	return {
-		values,
-		secrets: {
-			get: vi.fn(async (key: string) => values.get(key)),
-			store: vi.fn(async (key: string, value: string) => {
-				values.set(key, value)
-			}),
-		},
-	}
-}
-
 const root = () => vscode.Uri.file("/private/workspace")
 const target = "/private/workspace/file-vault.v1.json"
 
 describe("FileVaultStore", () => {
-	it("対応表とファイル識別情報を暗号化し、鍵を別に保存する", async () => {
+	it("平文の JSON で残し、.gitignore を置く", async () => {
 		const memory = memoryFileSystem()
-		const secret = secretStorage()
-		const store = new FileVaultStore(root(), secret.secrets, memory.fs as never)
+		const store = new FileVaultStore(root(), memory.fs as never)
 
 		await store.enable("0:docs/customer.md", [["{{email-001}}", "alice@corp.example"]])
 
 		const persisted = Buffer.from(memory.files.get(target) ?? []).toString("utf8")
-		expect(persisted).not.toContain("alice@corp.example")
-		expect(persisted).not.toContain("docs/customer.md")
-		expect(secret.values.size).toBe(1)
-		expect(memory.renames).toHaveLength(1)
+		// 同じ PII は元のファイルやタスク履歴にも平文である。ここも平文で置く。
+		expect(persisted).toContain("alice@corp.example")
+		expect(JSON.parse(persisted).formatVersion).toBe(1)
+		expect(Buffer.from(memory.files.get("/private/workspace/.gitignore") ?? []).toString("utf8")).toBe("*\n")
 		expect(await store.inspect("0:docs/customer.md")).toMatchObject({
 			entries: [["{{email-001}}", "alice@corp.example"]],
 		})
 	})
 
-	it("鍵を失った暗号文を空のVaultとして上書きしない", async () => {
+	it("壊れた JSON を読まず、上書きもしない", async () => {
 		const memory = memoryFileSystem()
-		const secret = secretStorage()
-		const store = new FileVaultStore(root(), secret.secrets, memory.fs as never)
+		const store = new FileVaultStore(root(), memory.fs as never)
 		await store.enable("0:a.md", [["{{email-001}}", "alice@corp.example"]])
-		secret.values.clear()
+		memory.files.set(target, Buffer.from("これは JSON ではない"))
 		const before = memory.files.get(target)
 
-		await expect(store.enable("0:b.md")).rejects.toMatchObject({ code: "missingKey" } satisfies Partial<FileVaultError>)
-		expect(memory.files.get(target)).toEqual(before)
-	})
-
-	it("改ざんした暗号文を読まず、上書きもしない", async () => {
-		const memory = memoryFileSystem()
-		const secret = secretStorage()
-		const store = new FileVaultStore(root(), secret.secrets, memory.fs as never)
-		await store.enable("0:a.md", [["{{email-001}}", "alice@corp.example"]])
-		const envelope = JSON.parse(Buffer.from(memory.files.get(target) ?? []).toString("utf8"))
-		envelope.ciphertext = Buffer.from("tampered").toString("base64")
-		memory.files.set(target, Buffer.from(JSON.stringify(envelope)))
-		const before = memory.files.get(target)
-
-		await expect(store.enable("0:b.md")).rejects.toMatchObject({ code: "corrupt" } satisfies Partial<FileVaultError>)
+		await expect(store.enable("0:b.md")).rejects.toMatchObject({
+			code: "corrupt",
+		} satisfies Partial<FileVaultError>)
 		expect(memory.files.get(target)).toEqual(before)
 	})
 
 	it("同時更新を直列化して両方の対応を残す", async () => {
 		const memory = memoryFileSystem()
-		const secret = secretStorage()
-		const store = new FileVaultStore(root(), secret.secrets, memory.fs as never)
+		const store = new FileVaultStore(root(), memory.fs as never)
 		await store.enable("0:a.md")
 
 		await Promise.all([
@@ -115,8 +87,7 @@ describe("FileVaultStore", () => {
 
 	it("指定ファイルだけを消去して永続化を無効にする", async () => {
 		const memory = memoryFileSystem()
-		const secret = secretStorage()
-		const store = new FileVaultStore(root(), secret.secrets, memory.fs as never)
+		const store = new FileVaultStore(root(), memory.fs as never)
 		await store.enable("0:a.md", [["{{email-001}}", "alice@corp.example"]])
 		await store.enable("0:b.md", [["{{email-002}}", "bob@corp.example"]])
 
@@ -128,8 +99,7 @@ describe("FileVaultStore", () => {
 
 	it("ディレクトリ移動では配下だけを新しい関連付けへ移す", async () => {
 		const memory = memoryFileSystem()
-		const secret = secretStorage()
-		const store = new FileVaultStore(root(), secret.secrets, memory.fs as never)
+		const store = new FileVaultStore(root(), memory.fs as never)
 		await store.enable("0:old/a.md", [["{{email-001}}", "alice@corp.example"]])
 		await store.enable("0:old/nested/b.md", [["{{email-002}}", "bob@corp.example"]])
 		await store.enable("0:other.md", [["{{email-003}}", "carol@corp.example"]])
@@ -143,8 +113,7 @@ describe("FileVaultStore", () => {
 
 	it("ディレクトリ削除では配下だけを消去する", async () => {
 		const memory = memoryFileSystem()
-		const secret = secretStorage()
-		const store = new FileVaultStore(root(), secret.secrets, memory.fs as never)
+		const store = new FileVaultStore(root(), memory.fs as never)
 		await store.enable("0:old/a.md", [["{{email-001}}", "alice@corp.example"]])
 		await store.enable("0:old/b.md", [["{{email-002}}", "bob@corp.example"]])
 		await store.enable("0:other.md", [["{{email-003}}", "carol@corp.example"]])
@@ -156,24 +125,25 @@ describe("FileVaultStore", () => {
 
 	it("最終利用から保持日数が経過した対応だけを消去する", async () => {
 		const memory = memoryFileSystem()
-		const secret = secretStorage()
 		let current = new Date("2026-01-01T00:00:00.000Z")
-		const store = new FileVaultStore(root(), secret.secrets, memory.fs as never, () => current)
+		const store = new FileVaultStore(root(), memory.fs as never, () => current)
 		await store.enable("0:expired.md")
 		current = new Date("2026-01-20T00:00:00.000Z")
 		await store.enable("0:current.md")
 		current = new Date("2026-02-01T00:00:00.000Z")
 
-		expect(await store.prune(30, async () => true)).toEqual({ expired: 1, missing: 0 })
+		expect(await store.prune(30, async () => true)).toEqual({
+			expired: 1,
+			missing: 0,
+		})
 		expect(await store.inspect("0:expired.md")).toBeUndefined()
 		expect(await store.inspect("0:current.md")).toBeDefined()
 	})
 
 	it("0日では期限削除せず、消失確認済みだけを消去する", async () => {
 		const memory = memoryFileSystem()
-		const secret = secretStorage()
 		let current = new Date("2020-01-01T00:00:00.000Z")
-		const store = new FileVaultStore(root(), secret.secrets, memory.fs as never, () => current)
+		const store = new FileVaultStore(root(), memory.fs as never, () => current)
 		await store.enable("0:exists.md")
 		await store.enable("0:missing.md")
 		await store.enable("0:unknown.md")
@@ -193,13 +163,15 @@ describe("FileVaultStore", () => {
 
 	it("選んだ複数ファイルだけを1回の更新で消去する", async () => {
 		const memory = memoryFileSystem()
-		const secret = secretStorage()
-		const store = new FileVaultStore(root(), secret.secrets, memory.fs as never)
+		const store = new FileVaultStore(root(), memory.fs as never)
 		await store.enable("0:a.md", [["{{email-001}}", "a@corp.example"]])
 		await store.enable("0:b.md", [["{{email-002}}", "b@corp.example"]])
 		await store.enable("0:c.md", [["{{email-003}}", "c@corp.example"]])
 
-		expect(await store.deleteMany(["0:a.md", "0:c.md"])).toEqual({ files: 2, entries: 2 })
+		expect(await store.deleteMany(["0:a.md", "0:c.md"])).toEqual({
+			files: 2,
+			entries: 2,
+		})
 		expect(await store.inspect("0:a.md")).toBeUndefined()
 		expect(await store.inspect("0:b.md")).toBeDefined()
 		expect(await store.inspect("0:c.md")).toBeUndefined()
@@ -207,43 +179,42 @@ describe("FileVaultStore", () => {
 
 	it("ファイル数と1ファイルの対応数の上限を越えて既存データを上書きしない", async () => {
 		const memory = memoryFileSystem()
-		const secret = secretStorage()
 		let limits = { maxFiles: 1, maxEntriesPerFile: 2, maxBytes: 100_000 }
-		const store = new FileVaultStore(root(), secret.secrets, memory.fs as never, undefined, () => limits)
+		const store = new FileVaultStore(root(), memory.fs as never, undefined, () => limits)
 		await store.enable("0:a.md", [["{{email-001}}", "a@corp.example"]])
 		const beforeFileLimit = memory.files.get(target)
 
-		await expect(store.enable("0:b.md")).rejects.toMatchObject({ code: "maxFiles" })
+		await expect(store.enable("0:b.md")).rejects.toMatchObject({
+			code: "maxFiles",
+		})
 		expect(memory.files.get(target)).toEqual(beforeFileLimit)
 
 		limits = { ...limits, maxFiles: 2 }
 		await store.appendIfEnabled("0:a.md", [["{{email-002}}", "b@corp.example"]])
 		const beforeEntryLimit = memory.files.get(target)
-		await expect(
-			store.appendIfEnabled("0:a.md", [["{{email-003}}", "c@corp.example"]]),
-		).rejects.toMatchObject({ code: "maxEntries" })
+		await expect(store.appendIfEnabled("0:a.md", [["{{email-003}}", "c@corp.example"]])).rejects.toMatchObject({
+			code: "maxEntries",
+		})
 		expect(memory.files.get(target)).toEqual(beforeEntryLimit)
 	})
 
 	it("全体容量の上限を越えて既存データを上書きしない", async () => {
 		const memory = memoryFileSystem()
-		const secret = secretStorage()
-		const store = new FileVaultStore(root(), secret.secrets, memory.fs as never, undefined, () => ({
+		const store = new FileVaultStore(root(), memory.fs as never, undefined, () => ({
 			maxFiles: 10,
 			maxEntriesPerFile: 10,
 			maxBytes: 200,
 		}))
 
-		await expect(
-			store.enable("0:a.md", [["{{email-001}}", "a".repeat(300)]]),
-		).rejects.toMatchObject({ code: "maxBytes" })
+		await expect(store.enable("0:a.md", [["{{email-001}}", "a".repeat(300)]])).rejects.toMatchObject({
+			code: "maxBytes",
+		})
 		expect(memory.files.has(target)).toBe(false)
 	})
 
 	it("上限が0ならファイル数・対応数・全体容量を制限しない", async () => {
 		const memory = memoryFileSystem()
-		const secret = secretStorage()
-		const store = new FileVaultStore(root(), secret.secrets, memory.fs as never, undefined, () => ({
+		const store = new FileVaultStore(root(), memory.fs as never, undefined, () => ({
 			maxFiles: 0,
 			maxEntriesPerFile: 0,
 			maxBytes: 0,

@@ -37,7 +37,7 @@ export type PiiMasking = {
 		/** 登録できる対応数。0 は無制限。 */
 		maxEntries?: number
 	}
-	/** ファイルごとに暗号化保存する対応表の保持条件。 */
+	/** ファイルごとに保存する対応表の保持条件。 */
 	fileVault?: {
 		/** 最終利用からの保持日数。0 は時間による期限なし。 */
 		retentionDays?: number

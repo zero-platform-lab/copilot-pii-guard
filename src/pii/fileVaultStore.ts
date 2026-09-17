@@ -1,10 +1,8 @@
-import { createCipheriv, createDecipheriv, randomBytes } from "node:crypto"
+import { randomBytes } from "node:crypto"
 
 import * as vscode from "vscode"
 
 const FORMAT_VERSION = 1
-const KEY_NAME = "piiGuard.fileVault.masterKey.v1"
-const AAD = Buffer.from("copilot-pii-guard:file-vault:v1", "utf8")
 const FILE_NAME = "file-vault.v1.json"
 
 export const DEFAULT_FILE_VAULT_LIMITS = {
@@ -33,14 +31,6 @@ type Catalog = {
 	files: Record<string, StoredFile>
 }
 
-type Envelope = {
-	formatVersion: 1
-	algorithm: "aes-256-gcm"
-	nonce: string
-	ciphertext: string
-	tag: string
-}
-
 export type FileVaultRecord = Readonly<StoredFile>
 
 export type FileVaultPruneResult = {
@@ -50,13 +40,7 @@ export type FileVaultPruneResult = {
 
 export class FileVaultError extends Error {
 	constructor(
-		public readonly code:
-			| "missingKey"
-			| "corrupt"
-			| "unsupported"
-			| "maxFiles"
-			| "maxEntries"
-			| "maxBytes",
+		public readonly code: "corrupt" | "unsupported" | "maxFiles" | "maxEntries" | "maxBytes",
 		cause?: unknown,
 	) {
 		super(code, { cause })
@@ -68,27 +52,6 @@ function emptyCatalog(): Catalog {
 	return { formatVersion: FORMAT_VERSION, files: {} }
 }
 
-function decodeKey(encoded: string): Buffer {
-	const key = Buffer.from(encoded, "base64")
-	if (key.length !== 32) throw new FileVaultError("missingKey")
-	return key
-}
-
-function encrypt(catalog: Catalog, key: Buffer): Uint8Array {
-	const nonce = randomBytes(12)
-	const cipher = createCipheriv("aes-256-gcm", key, nonce)
-	cipher.setAAD(AAD)
-	const ciphertext = Buffer.concat([cipher.update(JSON.stringify(catalog), "utf8"), cipher.final()])
-	const envelope: Envelope = {
-		formatVersion: FORMAT_VERSION,
-		algorithm: "aes-256-gcm",
-		nonce: nonce.toString("base64"),
-		ciphertext: ciphertext.toString("base64"),
-		tag: cipher.getAuthTag().toString("base64"),
-	}
-	return Buffer.from(JSON.stringify(envelope), "utf8")
-}
-
 function validCatalog(value: unknown): value is Catalog {
 	if (!value || typeof value !== "object") return false
 	const candidate = value as Partial<Catalog>
@@ -98,7 +61,8 @@ function validCatalog(value: unknown): value is Catalog {
 	return Object.entries(candidate.files).every(([identity, record]) => {
 		if (!record || typeof record !== "object" || record.identity !== identity) return false
 		if (typeof record.enabledAt !== "string" || typeof record.lastUsedAt !== "string") return false
-		if (!Number.isFinite(Date.parse(record.enabledAt)) || !Number.isFinite(Date.parse(record.lastUsedAt))) return false
+		if (!Number.isFinite(Date.parse(record.enabledAt)) || !Number.isFinite(Date.parse(record.lastUsedAt)))
+			return false
 		return (
 			Array.isArray(record.entries) &&
 			record.entries.every(
@@ -113,53 +77,39 @@ function validCatalog(value: unknown): value is Catalog {
 	})
 }
 
-function decrypt(raw: Uint8Array, key: Buffer): Catalog {
+/**
+ * 読んだ内容を、扱える形にする。
+ *
+ * **平文で置く。** 同じ PII は元のファイルにもタスクの履歴にも平文なので、対応表だけ暗号化しても
+ * 守りは上がらない。壊れた・版が違うときは、誤った値ではなく失敗を出す。
+ */
+function parse(raw: Uint8Array): Catalog {
+	let value: unknown
 	try {
-		const envelope = JSON.parse(Buffer.from(raw).toString("utf8")) as Partial<Envelope>
-		if (envelope.formatVersion !== FORMAT_VERSION || envelope.algorithm !== "aes-256-gcm") {
-			throw new FileVaultError("unsupported")
-		}
-		if (!envelope.nonce || !envelope.ciphertext || !envelope.tag) throw new Error("incomplete envelope")
-
-		const nonce = Buffer.from(envelope.nonce, "base64")
-		const tag = Buffer.from(envelope.tag, "base64")
-		if (nonce.length !== 12 || tag.length !== 16) throw new Error("invalid envelope")
-		const decipher = createDecipheriv("aes-256-gcm", key, nonce)
-		decipher.setAAD(AAD)
-		decipher.setAuthTag(tag)
-		const plain = Buffer.concat([
-			decipher.update(Buffer.from(envelope.ciphertext, "base64")),
-			decipher.final(),
-		])
-		const catalog: unknown = JSON.parse(plain.toString("utf8"))
-		if (
-			catalog &&
-			typeof catalog === "object" &&
-			"formatVersion" in catalog &&
-			catalog.formatVersion !== FORMAT_VERSION
-		) {
-			throw new FileVaultError("unsupported")
-		}
-		if (!validCatalog(catalog)) throw new Error("invalid catalog")
-		return catalog
+		value = JSON.parse(Buffer.from(raw).toString("utf8"))
 	} catch (error) {
-		if (error instanceof FileVaultError) throw error
 		throw new FileVaultError("corrupt", error)
 	}
+	if (value && typeof value === "object" && "formatVersion" in value && value.formatVersion !== FORMAT_VERSION) {
+		throw new FileVaultError("unsupported")
+	}
+	if (!validCatalog(value)) throw new FileVaultError("corrupt")
+	return value
 }
 
 function isNotFound(error: unknown): boolean {
 	return error instanceof Error && /FileNotFound|EntryNotFound/i.test(error.name)
 }
 
-/** ワークスペース固有領域の暗号化カタログ。全操作を直列化して更新の取りこぼしを防ぐ。 */
+/** ワークスペース固有領域の対応表（平文の JSON）。全操作を直列化して更新の取りこぼしを防ぐ。 */
 export class FileVaultStore {
 	private tail: Promise<void> = Promise.resolve()
 	private readonly target: vscode.Uri
+	/** 保管ディレクトリへ `.gitignore` を置いたか。対応表は平文なので、万一 git 配下でも残さない。 */
+	private gitignored = false
 
 	constructor(
 		private readonly root: vscode.Uri,
-		private readonly secrets: Pick<vscode.SecretStorage, "get" | "store">,
 		private readonly fs: Pick<
 			typeof vscode.workspace.fs,
 			"readFile" | "writeFile" | "createDirectory" | "rename" | "delete"
@@ -195,37 +145,38 @@ export class FileVaultStore {
 	}
 
 	private async read(): Promise<{ catalog: Catalog; exists: boolean }> {
-		let raw: Uint8Array
 		try {
-			raw = await this.fs.readFile(this.target)
+			const raw = await this.fs.readFile(this.target)
+			return { catalog: parse(raw), exists: true }
 		} catch (error) {
 			if (isNotFound(error)) return { catalog: emptyCatalog(), exists: false }
 			throw error
 		}
-
-		const encoded = await this.secrets.get(KEY_NAME)
-		if (!encoded) throw new FileVaultError("missingKey")
-		return { catalog: decrypt(raw, decodeKey(encoded)), exists: true }
 	}
 
-	private async write(catalog: Catalog, existed: boolean): Promise<void> {
-		let encoded = await this.secrets.get(KEY_NAME)
-		if (!encoded) {
-			if (existed) throw new FileVaultError("missingKey")
-			encoded = randomBytes(32).toString("base64")
-			await this.secrets.store(KEY_NAME, encoded)
+	/** 保管ディレクトリへ `.gitignore`（すべて無視）を置く。対応表は平文なので、コミットさせない。 */
+	private async ensureGitignore(): Promise<void> {
+		if (this.gitignored) return
+		try {
+			await this.fs.writeFile(vscode.Uri.joinPath(this.root, ".gitignore"), Buffer.from("*\n", "utf8"))
+		} catch {
+			// 保険なので、書けなくても保存は続ける。
 		}
+		this.gitignored = true
+	}
 
+	private async write(catalog: Catalog, _existed: boolean): Promise<void> {
 		await this.fs.createDirectory(this.root)
+		await this.ensureGitignore()
 		const temporary = vscode.Uri.joinPath(this.root, `${FILE_NAME}.${randomBytes(8).toString("hex")}.tmp`)
-		await this.fs.writeFile(temporary, encrypt(catalog, decodeKey(encoded)))
+		await this.fs.writeFile(temporary, Buffer.from(JSON.stringify(catalog), "utf8"))
 		try {
 			await this.fs.rename(temporary, this.target, { overwrite: true })
 		} catch (error) {
 			try {
 				await this.fs.delete(temporary)
 			} catch {
-				// 元の暗号文を守ることを優先する。一時ファイルの掃除失敗で理由を置き換えない。
+				// 元のファイルを守ることを優先する。一時ファイルの掃除失敗で理由を置き換えない。
 			}
 			throw error
 		}
