@@ -46,14 +46,14 @@ npm run vsix          # VSIX を bin/ に生成
 
 | 出来るもの | 対象 | 固有名詞検出 |
 | --- | --- | --- |
-| `copilot-pii-guard-linux-x64-0.2.7.vsix` | Linux (x64) | 動く |
-| `copilot-pii-guard-win32-x64-0.2.7.vsix` | Windows (x64) | 動く |
-| `copilot-pii-guard-0.2.7.vsix` | それ以外 | 動かない（基本検出は動く） |
+| `copilot-pii-guard-linux-x64-0.2.8.vsix` | Linux (x64) | 動く |
+| `copilot-pii-guard-win32-x64-0.2.8.vsix` | Windows (x64) | 動く |
+| `copilot-pii-guard-0.2.8.vsix` | それ以外 | 動かない（基本検出は動く） |
 
 ## 入れ方
 
 ```sh
-code --install-extension bin/copilot-pii-guard-linux-x64-0.2.7.vsix
+code --install-extension bin/copilot-pii-guard-linux-x64-0.2.8.vsix
 ```
 
 VS Code の画面からは、拡張機能ビューの右上にある `…` から **VSIX からのインストール** を選びます。
@@ -264,14 +264,14 @@ VSIXをZIPとして展開します。
 Linux:
 
 ```sh
-unzip copilot-pii-guard-linux-x64-0.2.7.vsix -d pii-guard-model-builder
+unzip copilot-pii-guard-linux-x64-0.2.8.vsix -d pii-guard-model-builder
 cd pii-guard-model-builder/extension
 ```
 
 Windows（PowerShell）:
 
 ```powershell
-Copy-Item .\copilot-pii-guard-win32-x64-0.2.7.vsix .\copilot-pii-guard.zip
+Copy-Item .\copilot-pii-guard-win32-x64-0.2.8.vsix .\copilot-pii-guard.zip
 Expand-Archive .\copilot-pii-guard.zip -DestinationPath .\pii-guard-model-builder
 Set-Location .\pii-guard-model-builder\extension
 ```
