@@ -72,6 +72,11 @@
 					"maximum": 3650,
 					"markdownDescription": "ファイル対応表を最終利用から保持する日数です。`0` は時間による期限なしです。対象ファイルが無くなった場合は、この設定にかかわらず削除します。"
 				},
+				"piiGuard.fileMapping.root": {
+					"type": "string",
+					"default": "",
+					"markdownDescription": "ファイル対応表の保管ルート（絶対パス）です。空のときは拡張機能専用の領域へ保管します。設定すると、このパスの下にワークスペースごとの区画を作って保管します。**ワークスペース内を指さないでください。** 対応表は元の値を含むため、ワークスペース内に置くと、エージェントが読み取ってLLMへ送る恐れがあります。"
+				},
 				"piiGuard.sessionMapping.maxEntries": {
 					"type": "integer",
 					"default": 10000,

@@ -39,6 +39,8 @@ export type PiiMasking = {
 	}
 	/** ファイルごとに保存する対応表の保持条件。 */
 	fileMapping?: {
+		/** 保管ルート（絶対パス）。空なら拡張機能専用領域。 */
+		root?: string
 		/** 最終利用からの保持日数。0 は時間による期限なし。 */
 		retentionDays?: number
 		maxFiles?: number

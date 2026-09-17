@@ -57,6 +57,7 @@ export function readSettings(): PiiMasking {
 			maxEntries: config.get<number>("sessionMapping.maxEntries"),
 		},
 		fileMapping: {
+			root: config.get<string>("fileMapping.root"),
 			retentionDays: config.get<number>("fileMapping.retentionDays"),
 			maxFiles: config.get<number>("fileMapping.maxFiles"),
 			maxEntriesPerFile: config.get<number>("fileMapping.maxEntriesPerFile"),

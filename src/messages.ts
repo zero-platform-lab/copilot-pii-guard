@@ -28,6 +28,8 @@ const MESSAGES: Record<string, string> = {
 	"common:pii.fileMapping.unsupported": "未対応形式のファイル対応表は読込も上書きもしません。",
 	"common:pii.fileMapping.failed": "ファイル対応表を読み込めませんでした。既存データは変更していません。",
 	"common:pii.fileMapping.saveFailed": "ファイルは伏せましたが、ファイル対応表を更新できませんでした。",
+	"common:pii.fileMapping.rootInsideWorkspace": "対応表は元の値を含みます。保管ルートがワークスペース内にあると、エージェントが読み取ってLLMへ送る恐れがあります。ワークスペースの外のパスを指してください。",
+	"common:pii.fileMapping.rootNotAbsolute": "保管ルートには絶対パスを指してください。相対パスは無視し、既定の保管場所を使います。",
 	"common:pii.fileMapping.maxFiles": "ファイル対応表のファイル数が設定上限に達したため、保存しませんでした。",
 	"common:pii.fileMapping.maxEntries": "このファイルの対応数が設定上限に達したため、保存しませんでした。",
 	"common:pii.fileMapping.maxBytes": "ファイル対応表全体の容量が設定上限に達したため、保存しませんでした。",
