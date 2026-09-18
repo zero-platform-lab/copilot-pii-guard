@@ -139,13 +139,21 @@ export class FileMappingController {
 	private readonly store: FileMappingStore | undefined
 	/** 保管ルートの設定に問題があれば、`start()` で一度だけ知らせる語。 */
 	private readonly rootWarning: MappingRootWarning | undefined
+	/** 対応表の保管ルート。この配下はエージェントのファイルツールから隠す。 */
+	private readonly root: vscode.Uri | undefined
 
 	constructor(context: Pick<vscode.ExtensionContext, "storageUri">) {
 		const resolved = resolveMappingRoot(context.storageUri)
 		this.rootWarning = resolved.warning
+		this.root = resolved.root
 		this.store = resolved.root
 			? new FileMappingStore(resolved.root, undefined, undefined, fileMappingLimits)
 			: undefined
+	}
+
+	/** 対応表の保管ルート。ファイルツールの除外に使う。 */
+	get storageRoot(): vscode.Uri | undefined {
+		return this.root
 	}
 
 	/** 起動時の掃除と、VS Codeが通知する移動・削除への追従を開始する。 */

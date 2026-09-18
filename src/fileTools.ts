@@ -193,6 +193,22 @@ export async function runFileTool(
 	return (await masker.maskPrompt(result)).text
 }
 
+// エージェントのファイルツールから隠す、対応表の保管ルート。ここを検索・読み書きさせない。
+// 設定でワークスペース内に置かれても、平文の対応表（伏せ字↔元の値）をモデルへ渡さないため。
+let mappingStorageRoot: vscode.Uri | undefined
+
+export function setMappingStorageRoot(root: vscode.Uri | undefined): void {
+	mappingStorageRoot = root
+}
+
+/** 解決した URI が対応表の保管ルート配下か。ルート未設定なら常に false。 */
+export function isInsideMappingStore(uri: vscode.Uri): boolean {
+	if (!mappingStorageRoot) return false
+	const base = mappingStorageRoot.path
+	const prefix = base.endsWith("/") ? base : `${base}/`
+	return uri.path === base || uri.path.startsWith(prefix)
+}
+
 async function workspaceFile(path: string, allowMissingFile = false): Promise<vscode.Uri> {
 	const folders = vscode.workspace.workspaceFolders ?? []
 	if (folders.length === 0) throw new Error("作業場所が開かれていません。")
@@ -230,6 +246,9 @@ async function workspaceFile(path: string, allowMissingFile = false): Promise<vs
 			throw new Error(`シンボリックリンクは扱えません: ${path}`)
 		}
 	}
+	if (isInsideMappingStore(current)) {
+		throw new Error("伏せ字の対応表は読み書きできません。")
+	}
 	return current
 }
 
@@ -247,7 +266,7 @@ async function textFromFile(uri: vscode.Uri): Promise<string> {
 const defaultFileToolHost: FileToolHost = {
 	async listFiles(pattern, maxResults, token) {
 		const files = await vscode.workspace.findFiles(pattern, "**/{node_modules,.git}/**", maxResults, token)
-		return files.map(relativePath)
+		return files.filter((uri) => !isInsideMappingStore(uri)).map(relativePath)
 	},
 
 	async searchFiles(query, pattern, maxResults, token) {
@@ -255,6 +274,7 @@ const defaultFileToolHost: FileToolHost = {
 		const wanted = query.toLocaleLowerCase()
 		const matches: FileSearchMatch[] = []
 		for (const uri of files) {
+			if (isInsideMappingStore(uri)) continue
 			if (token.isCancellationRequested) break
 			let text: string
 			try {
