@@ -12,7 +12,7 @@ import { PiiMappingLimitError, sessionMapping } from "./pii/maskConversation"
 import { clearSessionMapping } from "./pii/sessionMappingEditor"
 import { FileMappingController } from "./pii/fileMapping"
 import { createHandler } from "./participant"
-import { disposeFileToolPreviews } from "./fileTools"
+import { disposeFileToolPreviews, setMappingStorageRoot } from "./fileTools"
 import { readSettings } from "./settings"
 import { fetchModelCommand, showModelStatus } from "./model"
 import { t } from "./messages"
@@ -33,6 +33,7 @@ function piiMasker(): TaskPiiMasker {
 export function activate(context: vscode.ExtensionContext): void {
 	context.subscriptions.push({ dispose: disposeFileToolPreviews })
 	const fileMapping = new FileMappingController(context)
+	setMappingStorageRoot(fileMapping.storageRoot)
 	context.subscriptions.push(...fileMapping.start())
 	const participant = vscode.chat.createChatParticipant(
 		"pii-guard.mask",

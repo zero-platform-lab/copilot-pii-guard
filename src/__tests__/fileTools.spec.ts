@@ -2,7 +2,15 @@
 
 import * as vscode from "vscode"
 
-import { FILE_TOOLS, FILE_TOOL_ACCESS, runFileTool, writeRevisionMatches, type FileToolHost } from "../fileTools"
+import {
+	FILE_TOOLS,
+	FILE_TOOL_ACCESS,
+	isInsideMappingStore,
+	runFileTool,
+	setMappingStorageRoot,
+	writeRevisionMatches,
+	type FileToolHost,
+} from "../fileTools"
 import { TaskPiiMasker } from "../pii/TaskPiiMasker"
 import { resetSessionMapping } from "../pii/maskConversation"
 import { unmaskText } from "../pii/maskText"
@@ -471,5 +479,52 @@ describe("PII Guardのファイル道具", () => {
 		})
 
 		expect(result).toBe("memo.txt:3: 担当 {{email-001}}")
+	})
+})
+
+describe("対応表の保管領域はエージェントのファイルツールから隠す", () => {
+	afterEach(() => setMappingStorageRoot(undefined))
+
+	it("isInsideMappingStore は保管ルート配下だけを true にする", () => {
+		setMappingStorageRoot({ path: "/w/.pii" } as never)
+		expect(isInsideMappingStore({ path: "/w/.pii" } as never)).toBe(true)
+		expect(isInsideMappingStore({ path: "/w/.pii/file-mapping.v1.json" } as never)).toBe(true)
+		expect(isInsideMappingStore({ path: "/w/other.md" } as never)).toBe(false)
+		// 区切り境界で照合するので、名前が前方一致するだけの別ディレクトリは誤爆しない。
+		expect(isInsideMappingStore({ path: "/w/.pii-other/x" } as never)).toBe(false)
+	})
+
+	it("ルート未設定なら常に false", () => {
+		setMappingStorageRoot(undefined)
+		expect(isInsideMappingStore({ path: "/w/.pii/file-mapping.v1.json" } as never)).toBe(false)
+	})
+
+	it("list は保管領域のファイルを返さない", async () => {
+		setFolders([{ index: 0, name: "w", uri: { path: "/w", fsPath: "/w" } }])
+		setMappingStorageRoot({ path: "/w/.pii" } as never)
+		vi.mocked(vscode.workspace.findFiles).mockResolvedValueOnce([
+			{ path: "/w/.pii/file-mapping.v1.json", fsPath: "/w/.pii/file-mapping.v1.json" },
+			{ path: "/w/note.md", fsPath: "/w/note.md" },
+		] as never)
+		const result = await runFileTool("pii_guard_list_files", {}, new TaskPiiMasker({ enabled: true } as never), {
+			restoreWrites: false,
+			token,
+		})
+		expect(result).toContain("/w/note.md")
+		expect(result).not.toContain("file-mapping.v1.json")
+	})
+
+	it("保管領域のファイルは read で拒否する（対応表がモデルへ渡らない）", async () => {
+		setFolders([{ index: 0, name: "w", uri: { path: "/w", fsPath: "/w" } }])
+		setMappingStorageRoot({ path: "/w/.pii" } as never)
+		vi.mocked(vscode.workspace.fs.stat).mockResolvedValue({ type: 1 } as never)
+		await expect(
+			runFileTool(
+				"pii_guard_read_file",
+				{ path: ".pii/file-mapping.v1.json" },
+				new TaskPiiMasker({ enabled: true } as never),
+				{ restoreWrites: false, token },
+			),
+		).rejects.toThrow("伏せ字の対応表は読み書きできません")
 	})
 })
