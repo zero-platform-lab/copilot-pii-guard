@@ -916,3 +916,60 @@ describe("ファイル道具の権限", () => {
 		expect(out.parts.join("")).toContain("処理を中断しました")
 	})
 })
+
+describe("モデルの応答でエラーが出ても落ちない", () => {
+	it("sendRequest が投げても reject せず、エラーを出して応答を履歴へ残す", async () => {
+		const out = fakeStream()
+		const handler = createHandler({
+			masker: () => new TaskPiiMasker({ enabled: true } as never),
+			isEnabled: () => true,
+			selectModel: async () =>
+				({
+					sendRequest: async () => {
+						throw new Error("boom")
+					},
+				}) as never,
+		})
+
+		const result = await handler(
+			{ prompt: PROMPT, references: [] } as never,
+			{ history: [] } as never,
+			out.stream as never,
+			{} as never,
+		)
+
+		const shown = out.parts.join("")
+		expect(shown).toContain("エラーが発生しました")
+		expect(shown).toContain("boom")
+		expect((result as { metadata?: Record<string, unknown> })?.metadata).toBeDefined()
+	})
+
+	it("ストリーム途中で投げても、それまでの断片を出す", async () => {
+		const out = fakeStream()
+		const handler = createHandler({
+			masker: () => new TaskPiiMasker({ enabled: true } as never),
+			isEnabled: () => true,
+			selectModel: async () =>
+				({
+					sendRequest: async () => ({
+						stream: (async function* () {
+							yield { value: "途中まで" }
+							throw new Error("stream broke")
+						})(),
+					}),
+				}) as never,
+		})
+
+		const result = await handler(
+			{ prompt: PROMPT, references: [] } as never,
+			{ history: [] } as never,
+			out.stream as never,
+			{} as never,
+		)
+
+		const shown = out.parts.join("")
+		expect(shown).toContain("途中まで")
+		expect(shown).toContain("エラーが発生しました")
+		expect((result as { metadata?: Record<string, unknown> })?.metadata).toBeDefined()
+	})
+})
