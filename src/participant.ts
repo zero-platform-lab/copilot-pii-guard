@@ -443,24 +443,36 @@ export function createHandler(deps: ParticipantDeps): vscode.ChatRequestHandler 
 				stream.markdown("\n\n> ⚠️ 利用者が処理を中断しました。")
 				return { metadata: { [MODEL_RESPONSE_METADATA]: modelResponse.join("") } }
 			}
-			const response = await model.sendRequest(modelMessages, { tools: [...availableTools] }, token)
 			const assistantParts: Array<vscode.LanguageModelTextPart | vscode.LanguageModelToolCallPart> = []
 			const toolCalls: ToolCall[] = []
+			try {
+				const response = await model.sendRequest(modelMessages, { tools: [...availableTools] }, token)
+				for await (const part of response.stream) {
+					const text = textFromPart(part)
+					if (text !== undefined) {
+						assistantParts.push(new vscode.LanguageModelTextPart(text))
+						modelResponse.push(text)
+						stream.markdown(restorer.push(text))
+						continue
+					}
 
-			for await (const part of response.stream) {
-				const text = textFromPart(part)
-				if (text !== undefined) {
-					assistantParts.push(new vscode.LanguageModelTextPart(text))
-					modelResponse.push(text)
-					stream.markdown(restorer.push(text))
-					continue
+					const call = toolCallFrom(part)
+					if (call) {
+						assistantParts.push(part as vscode.LanguageModelToolCallPart)
+						toolCalls.push(call)
+					}
 				}
-
-				const call = toolCallFrom(part)
-				if (call) {
-					assistantParts.push(part as vscode.LanguageModelToolCallPart)
-					toolCalls.push(call)
+			} catch (error) {
+				// モデル呼び出し・ストリームが失敗しても、握っている断片を出し、ここまでの応答を履歴へ
+				// 残す。そうしないと応答末尾が消え、次の要求へ文脈が伝わらない。
+				stream.markdown(restorer.flush())
+				if (token.isCancellationRequested) {
+					stream.markdown("\n\n> ⚠️ 利用者が処理を中断しました。")
+				} else {
+					console.error("モデルの応答でエラー:", error)
+					stream.markdown(`\n\n> ⚠️ モデルの応答でエラーが発生しました: ${error instanceof Error ? error.message : String(error)}`)
 				}
+				return { metadata: { [MODEL_RESPONSE_METADATA]: modelResponse.join("") } }
 			}
 
 			if (token.isCancellationRequested) {
