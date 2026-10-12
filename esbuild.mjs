@@ -11,12 +11,16 @@ import * as fs from "fs"
 import * as path from "path"
 import { fileURLToPath } from "url"
 
+import { copyNerModel } from "./scripts/copy-ner-model.mjs"
+
 const HERE = path.dirname(fileURLToPath(import.meta.url))
 const DIST = path.join(HERE, "dist")
 
 const production = process.argv.includes("--production")
 /** 配る先。`linux-x64` の形。`universal` なら native を入れない。 */
 const target = process.env.PII_GUARD_TARGET ?? `${process.platform}-${process.arch}`
+/** 同梱するモデルの置き場所。`vsce` が束ね直すので、環境変数で渡す（`package-vsix.mjs --with-model`）。 */
+const modelDir = process.env.PII_GUARD_MODEL_DIR || undefined
 
 /** `from` の下から、`keep` が真を返すものだけを `to` へ写す。 */
 function copyPackage(from, to, keep) {
@@ -104,3 +108,5 @@ await esbuild.build({
 })
 
 copyOnnxRuntime()
+
+if (modelDir) copyNerModel(modelDir, DIST)

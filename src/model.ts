@@ -8,15 +8,29 @@
 import * as vscode from "vscode"
 
 import { fetchModel, resolveBase } from "./pii/nerFetch"
-import { defaultModelDirectory, describeCheck, locateModel } from "./pii/nerModel"
+import { defaultModelDirectory, describeCheck, locateModel, modelDirectoryFor } from "./pii/nerModel"
 import { resolveDictionaryPath } from "./pii/dictionary"
 import { readSettings } from "./settings"
 import { t } from "./messages"
 
-/** 設定から、いま見ている置き場所を決める。空欄なら既定の場所。 */
-export function modelDirectory(): string {
+/** 設定に書かれた置き場所。`~` を開き、空欄なら undefined。 */
+function configuredDirectory(): string | undefined {
 	const raw = readSettings().properNouns?.modelPath
-	return (raw && resolveDictionaryPath(raw)) || defaultModelDirectory()
+	return (raw && resolveDictionaryPath(raw)) || undefined
+}
+
+/** いま判定に使う置き場所。指定 → 既定の場所 → 同梱の順に見る。 */
+export function modelDirectory(): string {
+	return modelDirectoryFor(configuredDirectory())
+}
+
+/**
+ * 取ってくる先。指定が無ければ既定の場所。
+ *
+ * **同梱の場所へは取らない。** 拡張を入れた場所の中にあり、拡張を更新すると消える。
+ */
+export function fetchDirectory(): string {
+	return configuredDirectory() ?? defaultModelDirectory()
 }
 
 /** どこを見ていて、置かれているかを出す。閉鎖環境ではこれが唯一の手がかりである。 */
@@ -38,7 +52,7 @@ export async function showModelStatus(): Promise<void> {
  * 実際には 1 度も外へ出ていない。
  */
 export async function fetchModelCommand(): Promise<void> {
-	const directory = modelDirectory()
+	const directory = fetchDirectory()
 	const url = readSettings().properNouns?.modelUrl ?? ""
 
 	if (!resolveBase(url)) {

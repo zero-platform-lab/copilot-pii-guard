@@ -12,21 +12,35 @@
 // 取り違えが黙って通る。
 
 import { spawnSync } from "child_process"
-import { existsSync, mkdirSync, readdirSync } from "fs"
+import { existsSync, mkdirSync, readdirSync, readFileSync } from "fs"
 import path from "path"
 import { fileURLToPath } from "url"
 
 const here = path.dirname(fileURLToPath(import.meta.url))
 
+const { version } = JSON.parse(readFileSync(path.join(here, "package.json"), "utf8"))
 const publish = process.argv.includes("--publish")
 const targets = process.argv.filter((one) => one === "universal" || /^[a-z0-9]+-[a-z0-9]+$/.test(one))
+
+// **固有名詞検出のモデルを同梱する（`--with-model=<展開したモデルの置き場所>`）。** 外へ出られない
+// 端末で、モデルを取りに行けないため。約 280 MB 大きくなるので、同梱しない配布物とは分けて作り、
+// 名前の末尾に `-with-model` を付ける。照合は束ね方（`scripts/copy-ner-model.mjs`）が行う。
+const withModelArg = process.argv.find((one) => one.startsWith("--with-model="))
+const modelDir = withModelArg ? path.resolve(withModelArg.slice("--with-model=".length)) : undefined
+if (modelDir && (publish || targets.includes("universal"))) {
+	// universal には native が無く、同梱しても固有名詞検出が動かない。店へ出すものには入れない。
+	console.error("--with-model は platform を指した配布物にだけ使える（universal と --publish には使えない）。")
+	process.exit(1)
+}
 
 // **platform を指さない作り方を許さない。**
 //
 // 指さないと、いま動いている機械の native だけが入る。ほかの platform で入れた人は、
 // 第 2 層が黙って動かない（例外は `TaskPiiMasker` が握るので、画面には何も出ない）。
 if (targets.length === 0) {
-	console.error("使い方: node package-vsix.mjs <platform>-<arch> [<platform>-<arch> …] [--publish]")
+	console.error(
+		"使い方: node package-vsix.mjs <platform>-<arch> [<platform>-<arch> …] [--publish] [--with-model=<モデルの置き場所>]",
+	)
 	console.error("第 2 層の native を含むため、platform を指さずには作れない。")
 	process.exit(1)
 }
@@ -43,7 +57,7 @@ function run(command, args, env) {
 
 function buildOne(target) {
 	// 束ね直しにも届くよう、環境変数でも渡す（`vsce` が `vscode:prepublish` を実行し直す）。
-	const env = { ...process.env, PII_GUARD_TARGET: target }
+	const env = { ...process.env, PII_GUARD_TARGET: target, PII_GUARD_MODEL_DIR: modelDir ?? "" }
 
 	run("node", ["esbuild.mjs", "--production"], env)
 	mkdirSync(path.join(here, "bin"), { recursive: true })
@@ -57,7 +71,8 @@ function buildOne(target) {
 		// ここへ足す。
 		run("vsce", ["publish", "--no-dependencies", ...forTarget], env)
 	} else {
-		run("vsce", ["package", "--no-dependencies", ...forTarget, "--out", "bin"], env)
+		const out = modelDir ? `bin/copilot-pii-guard-${target}-with-model-${version}.vsix` : "bin"
+		run("vsce", ["package", "--no-dependencies", ...forTarget, "--out", out], env)
 	}
 
 	// `universal` には native が入らない。**入っていないことを確かめる。**
@@ -99,4 +114,13 @@ function buildOne(target) {
 	}
 
 	console.log(`\n確認: ${target} の実行の仕組みだけが入っている。`)
+
+	// **同梱を頼んだのに入っていない、を作らない。** 照合値が無ければ拡張は同梱とみなさない。
+	// 頼んでいないのに入っている（前に作った dist の残り）も、280 MB 大きい通常版になるので止める。
+	const bundledSums = path.join(here, "dist", "ner-model", "SHA256SUMS")
+	if (Boolean(modelDir) !== existsSync(bundledSums)) {
+		console.error(modelDir ? `\n${bundledSums} が無い。モデルが同梱されていない。` : "\n頼んでいないのにモデルが同梱されている。")
+		process.exit(1)
+	}
+	if (modelDir) console.log(`確認: 固有名詞検出のモデルを同梱した（${path.dirname(bundledSums)}）。`)
 }
