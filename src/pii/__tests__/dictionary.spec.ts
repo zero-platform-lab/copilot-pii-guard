@@ -65,8 +65,8 @@ describe("parseDictionary（FR-PII-03c）", () => {
 		])
 	})
 
-	it("知らない種類は term として扱う", () => {
-		expect(parseDictionary("サンプル\tなにか\n")).toEqual([{ value: "サンプル", kind: "term" }])
+	it("知らない種類の行は使わない（黙って term にしない）", () => {
+		expect(parseDictionary("サンプル\tなにか\n")).toEqual([])
 	})
 
 	it("前後の空白を落とす", () => {
@@ -107,6 +107,59 @@ describe("正規表現（FR-PII-03f）", () => {
 		// 全ての位置に当たり、文書が伏せ字で埋まる。
 		expect(parsed.terms).toEqual([])
 		expect(parsed.problems[0].reason).toContain("空の文字列")
+	})
+})
+
+describe("区切り文字（タブ 1 つ、2 列まで）", () => {
+	it("種類は person・org・term のどれかで、大文字と小文字は区別しない。空なら term", () => {
+		expect(parseDictionaryLines("田中\tperson\nサンプル\tORG\n案件\tterm\n葵\t\n林\n")).toEqual({
+			terms: [
+				{ value: "田中", kind: "person" },
+				{ value: "サンプル", kind: "org" },
+				{ value: "案件", kind: "term" },
+				{ value: "葵", kind: "term" },
+				{ value: "林", kind: "term" },
+			],
+			problems: [],
+		})
+	})
+
+	it("種類の書き間違いは、使わずに何行目かと書かれていた語を知らせる", () => {
+		expect(parseDictionaryLines("田中\tperson\n鈴木\tpeson\n")).toEqual({
+			terms: [{ value: "田中", kind: "person" }],
+			problems: [{ line: 2, value: "鈴木\tpeson", reason: "種類は person・org・term のどれかです（書かれていたのは「peson」）" }],
+		})
+	})
+
+	it("タブが 2 つ以上ある行（3 列以上）は使わずに知らせる。3 列目を黙って捨てない", () => {
+		expect(parseDictionaryLines("田中\tperson\t営業部\n")).toEqual({
+			terms: [],
+			problems: [
+				{ line: 1, value: "田中\tperson\t営業部", reason: "区切りのタブが 2 つ以上あります。列は「語<TAB>種類」の 2 つまでです" },
+			],
+		})
+	})
+
+	it("タブの代わりに空白（全角も）で種類を区切った行は、区切り間違いとして知らせる", () => {
+		const parsed = parseDictionaryLines("田中 person\nサンプル　org\n案件  Term\n")
+
+		expect(parsed.terms).toEqual([])
+		expect(parsed.problems.map((one) => one.line)).toEqual([1, 2, 3])
+		for (const one of parsed.problems) expect(one.reason).toContain("種類の区切りはタブです")
+	})
+
+	it("末尾が種類名でも、空白が無ければ普通の語として読む（区切り間違いと取り違えない）", () => {
+		expect(parseDictionaryLines("Superson\nproject-org\n").terms).toEqual([
+			{ value: "Superson", kind: "term" },
+			{ value: "project-org", kind: "term" },
+		])
+	})
+
+	it("正規表現の行にも同じ決まりを当てる", () => {
+		expect(parseDictionaryLines("/EMP-\\d{5}/\tperson\n/EMP-\\d{5}/\tpersn\n")).toEqual({
+			terms: [{ value: "EMP-\\d{5}", kind: "person", regex: true }],
+			problems: [expect.objectContaining({ line: 2, reason: expect.stringContaining("種類は") })],
+		})
 	})
 })
 
