@@ -376,6 +376,11 @@
 				"category": "PII Guard"
 			},
 			{
+				"command": "piiGuard.openSettings",
+				"title": "設定を開く",
+				"category": "PII Guard"
+			},
+			{
 				"command": "piiGuard.exportDictionary",
 				"title": "辞書を書き出す",
 				"category": "PII Guard"
@@ -457,12 +462,14 @@
 		"undici": "^7.0.0"
 	},
 	"devDependencies": {
+		"@types/jsdom": "^21.1.7",
 		"@types/node": "^22.0.0",
 		"@types/vscode": "^1.95.0",
 		"@vitest/coverage-v8": "^3.2.7",
 		"@vscode/vsce": "^3.0.0",
 		"aitext-check": "github:zero-platform-lab/aitext-check",
 		"esbuild": "^0.25.0",
+		"jsdom": "^26.1.0",
 		"nock": "^14.0.0",
 		"typescript": "^5.6.0",
 		"vitest": "^3.0.0"

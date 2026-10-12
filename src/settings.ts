@@ -1,8 +1,8 @@
 // VS Code の設定から、伏せ字の設定を読む。
 //
-// **本体と違い、画面は持たない。** 本体は webview の設定の画面を持つが、この拡張は
-// `contributes.configuration` だけで足りる。設定の画面を自前で持つと、VS Code の
-// 設定の検索から外れて見つけてもらえない。
+// **設定の置き場所は VS Code の設定（`contributes.configuration`）だけ。** 専用の設定の画面
+// （`settingsView/`）も、同じ設定を読み書きするだけで、別の置き場所を持たない。別に持つと、
+// VS Code の設定の検索から外れて見つけてもらえない。
 
 import * as vscode from "vscode"
 

@@ -15,6 +15,7 @@ import { FileMappingController } from "./pii/fileMapping"
 import { createHandler } from "./participant"
 import { disposeFileToolPreviews, setMappingStorageRoot } from "./fileTools"
 import { readSettings } from "./settings"
+import { openSettingsView } from "./settingsView/panel"
 import { fetchModelCommand, showModelStatus } from "./model"
 import { t } from "./messages"
 
@@ -88,6 +89,7 @@ export function activate(context: vscode.ExtensionContext): void {
 		vscode.commands.registerCommand("piiGuard.addToDictionary", () =>
 			addSelectionToDictionary(readSettings()),
 		),
+		vscode.commands.registerCommand("piiGuard.openSettings", () => openSettingsView(context)),
 		vscode.commands.registerCommand("piiGuard.exportDictionary", () =>
 			exportDictionary(readSettings()),
 		),
