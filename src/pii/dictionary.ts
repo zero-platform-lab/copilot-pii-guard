@@ -12,10 +12,18 @@ import type { PiiTerm } from "./types"
  * **目的。** 設定へ直接書くほかに、ファイルからも語を読む（`FR-PII-03b`）。行単位なので
  * 差分が読め、チームで 1 つの辞書を git で共有できる。
  *
- * **仕組み。** 1 行 1 語。タブの後ろに種類（`person` / `org`）を書ける。`#` で始まる行と
- * 空行は読み飛ばす（`FR-PII-03c`）。`/EMP-\d{5}/` と囲めば正規表現として扱う
- * （`FR-PII-03f`）。囲まなければ普通の語なので、`.` を含む社名がいきなり正規表現として
- * 動くことはない。
+ * **仕組み。** 1 行 1 語。`#` で始まる行と空行は読み飛ばす（`FR-PII-03c`）。`/EMP-\d{5}/` と
+ * 囲めば正規表現として扱う（`FR-PII-03f`）。囲まなければ普通の語なので、`.` を含む社名が
+ * いきなり正規表現として動くことはない。
+ *
+ * **区切り文字はタブ（U+0009）1 つだけ。** 列は「語」と「種類」の 2 つまでで、種類は `person`・
+ * `org`・`term` のどれか（大文字と小文字は区別しない）。種類の欄が空なら `term` として読む
+ * （種類を書かない古い辞書のため）。決まりを守れていない行は使わずに知らせる。黙って `term` に
+ * したり 3 列目を捨てたりすると、書いた人の意図と違う語を伏せ、意図した語を素通りさせる。
+ * - 3 列以上の行（タブが 2 つ以上）
+ * - 種類の欄が 3 つのどれでもない行（`peson` などの書き間違い）
+ * - タブが無く、末尾が「空白＋種類名」の行（`田中 person`）。空白は区切りにならず、
+ *   「田中 person」という 1 語になって田中を伏せない
  *
  * **符号化を判別する**（`FR-PII-03e`）。辞書が Shift_JIS で保存されていることがあり、
  * UTF-8 として読むと文字化けして 1 件も一致しない。伏せているつもりのまま素通りする、
@@ -56,6 +64,9 @@ export function decodeText(bytes: Uint8Array): string {
 /** `/EMP-\d{5}/` の形。囲んだときだけ正規表現として扱う（`FR-PII-03f`）。 */
 const REGEX_LINE = /^\/(.+)\/$/
 
+/** タブの代わりに空白で種類を区切ったように見える行。 */
+const SPACE_SEPARATED = /^\S.*[ \u3000]+(person|org|term)$/i
+
 export type ParsedDictionary = {
 	terms: PiiTerm[]
 	/** 読めなかった行（`FR-PII-03g`）。黙って読み飛ばさない。 */
@@ -72,11 +83,26 @@ export function parseDictionaryLines(text: string): ParsedDictionary {
 
 		// **分割を先に行う。** 行ごと trim すると、値が空白だけの行でタブが消え、
 		// 種類として書いた語が値として読まれる。
-		const [value, rawKind] = line.split("\t", 2)
-		const trimmed = value.trim()
+		const columns = line.split("\t")
+		const trimmed = columns[0].trim()
 		if (trimmed.length === 0) return
 
-		const kind = KINDS[(rawKind ?? "").trim().toLowerCase()] ?? "term"
+		const problem = (reason: string) => problems.push({ line: index + 1, value: stripped, reason })
+		if (columns.length > 2) {
+			problem("区切りのタブが 2 つ以上あります。列は「語<TAB>種類」の 2 つまでです")
+			return
+		}
+		const rawKind = (columns[1] ?? "").trim().toLowerCase()
+		const kind = rawKind === "" ? "term" : KINDS[rawKind]
+		if (!kind) {
+			problem(`種類は person・org・term のどれかです（書かれていたのは「${columns[1].trim()}」）`)
+			return
+		}
+		if (columns.length === 1 && SPACE_SEPARATED.test(trimmed)) {
+			problem("種類の区切りはタブです。空白は区切りにならず、行全体が 1 つの語になります")
+			return
+		}
+
 		const asRegex = REGEX_LINE.exec(trimmed)
 		if (!asRegex) {
 			terms.push({ value: trimmed, kind })
@@ -84,9 +110,9 @@ export function parseDictionaryLines(text: string): ParsedDictionary {
 		}
 
 		const source = asRegex[1]
-		const problem = regexProblem(source)
-		if (problem) {
-			problems.push({ line: index + 1, value: trimmed, reason: problem })
+		const invalid = regexProblem(source)
+		if (invalid) {
+			problem(invalid)
 			return
 		}
 

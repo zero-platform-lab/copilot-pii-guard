@@ -156,6 +156,24 @@ describe("FileMappingController", () => {
 		expect(session.restore("{{email-006}}")).toBe("alice@corp.example")
 	})
 
+	it("有効にした全ファイルの対応をまとめて返す（辞書の書き出し用）", async () => {
+		const stored = new PiiMapping()
+		// 保存するのは、ファイルの本文（"連絡先は {{email-005}}"）に現れる伏せ字の対応だけ。
+		stored.importEntries([
+			["{{email-005}}", "alice@corp.example"],
+			["{{person-001}}", "本文に無い"],
+		])
+		mocks.showWarningMessage.mockResolvedValueOnce("common:pii.fileMapping.enable")
+		const controller = new FileMappingController(context())
+		await controller.enable(stored)
+
+		expect(await controller.allEntries()).toEqual([["{{email-005}}", "alice@corp.example"]])
+	})
+
+	it("保存先が無い環境では、ファイルの対応は無いものとして返す", async () => {
+		expect(await new FileMappingController({ ...context(), storageUri: undefined }).allEntries()).toEqual([])
+	})
+
 	it("添付ファイルのURIから読み、衝突した番号を直す", async () => {
 		const stored = new PiiMapping()
 		stored.importEntries([["{{email-005}}", "alice@corp.example"]])

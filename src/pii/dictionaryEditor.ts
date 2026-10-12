@@ -33,15 +33,21 @@ import type { PiiTerm } from "./types"
 /** 新しく作る辞書の先頭に置く説明。書き方が分からないまま空のファイルを渡さない。 */
 export const DICTIONARY_HEADER = [
 	"# マスクの辞書。1 行 1 語。",
-	"# タブの後ろに種類（person / org）を書ける。省略すると term になる。",
+	"# 区切りはタブ 1 つ。列は「語<TAB>種類」の 2 つまで。種類は person / org / term（空なら term）。",
 	"# `/EMP-\\d{5}/` のようにスラッシュで囲むと正規表現として扱う。",
 	"# `#` で始まる行と空行は読み飛ばす。",
 	"",
 ].join("\n")
 
-/** 辞書へ書き足す 1 行。 */
+/**
+ * 辞書へ書く 1 行。
+ *
+ * **種類は必ず書く（`term` も書く）。** 書かない行は、表として見ると種類の欄が空（null）になり、
+ * 読む側の「空なら term」という決まりを知らないと意味が分からない。読むほうは、これまでどおり
+ * 書いていない行も term として読む。
+ */
 export function dictionaryLine(term: PiiTerm): string {
-	return term.kind && term.kind !== "term" ? `${term.value}\t${term.kind}\n` : `${term.value}\n`
+	return `${term.value}\t${term.kind ?? "term"}\n`
 }
 
 /**

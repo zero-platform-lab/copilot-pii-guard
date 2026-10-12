@@ -39,7 +39,7 @@ vi.mock("../../paths", () => ({
 	getGlobalAgentDirectory: () => mocks.globalAgentDirectory,
 }))
 
-import { defaultDictionaryPath } from "../dictionary"
+import { defaultDictionaryPath, parseDictionary } from "../dictionary"
 import { addSelectionToDictionary, canAppend, dictionaryLine, exportDictionary } from "../dictionaryEditor"
 
 /** Shift_JIS の「田中太郎」。 */
@@ -69,9 +69,9 @@ describe("dictionaryLine", () => {
 	it.each([
 		[{ value: "サンプル", kind: "org" as const }, "サンプル\torg\n"],
 		[{ value: "田中太郎", kind: "person" as const }, "田中太郎\tperson\n"],
-		// term は既定なので書かない。読むほうも書かなければ term として扱う。
-		[{ value: "プロジェクト葵", kind: "term" as const }, "プロジェクト葵\n"],
-		[{ value: "プロジェクト葵" }, "プロジェクト葵\n"],
+		// term も書く。種類の欄を空（null）にしない。
+		[{ value: "プロジェクト葵", kind: "term" as const }, "プロジェクト葵\tterm\n"],
+		[{ value: "プロジェクト葵" }, "プロジェクト葵\tterm\n"],
 	])("%o は %j になる", (term, expected) => {
 		expect(dictionaryLine(term)).toBe(expected)
 	})
@@ -253,7 +253,9 @@ describe("exportDictionary（FR-PII-17）", () => {
 
 		await exportDictionary({ terms: [{ value: "EMP-\\d{5}", regex: true }] })
 
-		expect(await read(out)).toContain("/EMP-\\d{5}/\n")
+		const written = await read(out)
+		expect(written).toContain("/EMP-\\d{5}/\tterm\n")
+		expect(parseDictionary(written)).toEqual([{ value: "EMP-\\d{5}", kind: "term", regex: true }])
 	})
 
 	it("書き出す語が無ければ、その旨を出して保存させない", async () => {

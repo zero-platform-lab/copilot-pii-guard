@@ -70,6 +70,14 @@ const MESSAGES: Record<string, string> = {
 	"common:pii.dictionaryWriteFailed": "辞書へ書けませんでした: {{error}}",
 	"common:pii.exported": "辞書を書き出しました: {{path}}",
 	"common:pii.nothingToExport": "書き出す辞書の語がありません。",
+	"common:pii.converted.nothing": "書き出せる変換済みの値がありません（氏名・社名・その他の語が対象です）。",
+	"common:pii.converted.fileMappingFailed": "ファイル対応表を読み込めませんでした。セッション対応表の値だけを書き出します。",
+	"common:pii.converted.insideWorkspace":
+		"書き出す辞書は元の値（氏名・社名など）を含みます。ワークスペースの中に保存すると、エージェントが読み取ってLLMへ送る恐れがあります。",
+	"common:pii.converted.saveAnyway": "それでも保存する",
+	"common:pii.converted.exported": "変換した値 {{count}} 件を辞書として書き出しました: {{path}}",
+	"common:pii.converted.exportedWithSkipped":
+		"変換した値 {{count}} 件を辞書として書き出しました: {{path}}（改行やタブを含む {{skipped}} 件は書き出していません）",
 	"common:pii.pickDictionary": "追加先の辞書を選んでください。",
 	"common:pii.pickKind": "語の種類を選んでください。",
 	"common:pii.kind.person": "人名",
