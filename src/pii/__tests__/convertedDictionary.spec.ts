@@ -158,6 +158,25 @@ describe("書き出した辞書を読み戻す", () => {
 		])
 	})
 
+	it("語の行は、どれも「語<TAB>種類」の 2 列で、種類の欄を空にしない", () => {
+		const text = formatConvertedDictionary(
+			convertedTerms([
+				["{{person-001}}", "田中"],
+				["{{org-001}}", "サンプル"],
+				["{{term-001}}", "案件アルファ"],
+				["{{term-002}}", "#社外秘"],
+			]).terms,
+		)
+		const rows = text.split("\n").filter((line) => line.length > 0 && !line.startsWith("#"))
+
+		expect(rows).toHaveLength(4)
+		for (const row of rows) {
+			const columns = row.split("\t")
+			expect(columns, row).toHaveLength(2)
+			expect(["person", "org", "term"], row).toContain(columns[1])
+		}
+	})
+
 	it("見出しに件数を書く", () => {
 		expect(formatConvertedDictionary(convertedTerms([["{{person-001}}", "田中"]]).terms)).toContain(
 			"# PII Guard が変換した値から書き出した（1 件）。",
