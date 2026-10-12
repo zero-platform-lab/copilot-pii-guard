@@ -381,6 +381,11 @@
 				"category": "PII Guard"
 			},
 			{
+				"command": "piiGuard.exportConvertedDictionary",
+				"title": "変換した値を辞書として書き出す",
+				"category": "PII Guard"
+			},
+			{
 				"command": "piiGuard.fetchModel",
 				"title": "モデルを取得する",
 				"category": "PII Guard"

@@ -8,6 +8,7 @@ import * as vscode from "vscode"
 import { TaskPiiMasker } from "./pii/TaskPiiMasker"
 import { checkSecretsInActiveEditor, maskSecretsInActiveEditor, restoreSecretsInActiveEditor } from "./pii/maskEditor"
 import { addSelectionToDictionary, exportDictionary } from "./pii/dictionaryEditor"
+import { exportConvertedDictionary } from "./pii/convertedDictionary"
 import { PiiMappingLimitError, sessionMapping } from "./pii/maskConversation"
 import { clearSessionMapping } from "./pii/sessionMappingEditor"
 import { FileMappingController } from "./pii/fileMapping"
@@ -89,6 +90,12 @@ export function activate(context: vscode.ExtensionContext): void {
 		),
 		vscode.commands.registerCommand("piiGuard.exportDictionary", () =>
 			exportDictionary(readSettings()),
+		),
+		vscode.commands.registerCommand("piiGuard.exportConvertedDictionary", () =>
+			exportConvertedDictionary({
+				sessionEntries: () => sessionMapping().entries,
+				fileEntries: () => fileMapping.allEntries(),
+			}),
 		),
 		vscode.commands.registerCommand("piiGuard.fetchModel", fetchModelCommand),
 		vscode.commands.registerCommand("piiGuard.modelStatus", showModelStatus),

@@ -80,8 +80,8 @@ function workspaceKey(): string {
 	return createHash("sha256").update(identity).digest("hex").slice(0, 16)
 }
 
-/** ルートがワークスペースフォルダの中を指すか。中だとエージェントが読み取ってLLMへ送る恐れがある。 */
-function rootInsideWorkspace(target: vscode.Uri): boolean {
+/** ワークスペースフォルダの中を指すか。中だとエージェントが読み取ってLLMへ送る恐れがある。 */
+export function insideWorkspace(target: vscode.Uri): boolean {
 	return (vscode.workspace.workspaceFolders ?? []).some((folder) => {
 		const base = folder.uri.path
 		return target.path === base || target.path.startsWith(base.endsWith("/") ? base : `${base}/`)
@@ -102,7 +102,7 @@ function resolveMappingRoot(storageUri: vscode.Uri | undefined): {
 	if (!setting || !hasWorkspace()) return { root: storageUri }
 	if (!path.isAbsolute(setting)) return { root: storageUri, warning: "rootNotAbsolute" }
 	const base = vscode.Uri.file(setting)
-	const warning = rootInsideWorkspace(base) ? "rootInsideWorkspace" : undefined
+	const warning = insideWorkspace(base) ? "rootInsideWorkspace" : undefined
 	return { root: vscode.Uri.joinPath(base, workspaceKey()), warning }
 }
 
@@ -154,6 +154,11 @@ export class FileMappingController {
 	/** 対応表の保管ルート。ファイルツールの除外に使う。 */
 	get storageRoot(): vscode.Uri | undefined {
 		return this.root
+	}
+
+	/** 有効にした全ファイルの対応。辞書の書き出しに使う。読めなければ投げる。 */
+	async allEntries(): Promise<FileMappingEntry[]> {
+		return ((await this.store?.list()) ?? []).flatMap((record) => record.entries)
 	}
 
 	/** 起動時の掃除と、VS Codeが通知する移動・削除への追従を開始する。 */
