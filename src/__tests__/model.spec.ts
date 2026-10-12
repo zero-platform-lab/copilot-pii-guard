@@ -5,6 +5,10 @@
 // **ここは外へ出る唯一の操作である。** 282 MB を取りに行く。誰の指示も無く出ないこと、
 // 取れたつもりで欠けた状態を作らないことを確かめる。
 
+import * as fs from "fs"
+import * as os from "os"
+import * as path from "path"
+
 import * as vscode from "vscode"
 
 const mocks = vi.hoisted(() => ({
@@ -14,6 +18,8 @@ const mocks = vi.hoisted(() => ({
 		async (..._args: unknown[]) =>
 			({ present: true, bytes: 282 * 1024 * 1024, missing: [] as string[] }) as unknown,
 	),
+	/** 同梱のモデルがあるかどうか。本物は拡張を入れた場所（`dist/ner-model`）を見る。 */
+	bundled: undefined as string | undefined,
 }))
 
 vi.mock("../settings", () => ({
@@ -27,16 +33,24 @@ vi.mock("../pii/nerFetch", async (importOriginal) => ({
 	fetchModel: mocks.fetchModel,
 }))
 
-vi.mock("../pii/nerModel", async (importOriginal) => ({
-	...(await importOriginal<typeof import("../pii/nerModel")>()),
-	locateModel: mocks.locateModel,
-}))
+vi.mock("../pii/nerModel", async (importOriginal) => {
+	const actual = await importOriginal<typeof import("../pii/nerModel")>()
+	return {
+		...actual,
+		locateModel: mocks.locateModel,
+		// 同梱の有無だけを差し替え、見る順は本物に任せる。既定の場所には照合値が無い前提。
+		modelDirectoryFor: (resolved: string | undefined) =>
+			actual.modelDirectoryFor(resolved, mocks.bundled ? require("path").dirname(mocks.bundled) : "/nowhere"),
+	}
+})
 
-import { fetchModelCommand, modelDirectory, showModelStatus } from "../model"
+import { fetchDirectory, fetchModelCommand, modelDirectory, showModelStatus } from "../model"
+import { defaultModelDirectory } from "../pii/nerModel"
 
 beforeEach(() => {
 	vi.clearAllMocks()
 	mocks.config = { properNouns: { modelUrl: "https://例/v1" } }
+	mocks.bundled = undefined
 })
 
 describe("取得（FR-PII-23c / FR-PII-23h）", () => {
@@ -78,6 +92,37 @@ describe("取得（FR-PII-23c / FR-PII-23h）", () => {
 
 		expect(vscode.window.showErrorMessage).toHaveBeenCalledWith(expect.stringContaining("404"))
 		expect(vscode.window.showInformationMessage).not.toHaveBeenCalled()
+	})
+
+	it("例外が Error でなくても、その中身を出す", async () => {
+		mocks.fetchModel.mockRejectedValueOnce("接続が切れた")
+
+		await fetchModelCommand()
+
+		expect(vscode.window.showErrorMessage).toHaveBeenCalledWith(expect.stringContaining("接続が切れた"))
+	})
+
+	it("同梱のモデルがあっても、取ってくる先は既定の場所にする（同梱の場所は更新で消える）", async () => {
+		const bundled = fs.mkdtempSync(path.join(os.tmpdir(), "bundled-"))
+		fs.mkdirSync(path.join(bundled, "ner-model"))
+		fs.writeFileSync(path.join(bundled, "ner-model", "SHA256SUMS"), "")
+		mocks.bundled = path.join(bundled, "ner-model")
+		// 既定の場所（~/.agent/pii-ner）は空にする。実機に置いてあるモデルに左右されない。
+		vi.stubEnv("HOME", bundled)
+		vi.stubEnv("USERPROFILE", bundled)
+		try {
+			// 判定と「どこを見ているか」は同梱の場所を見る。
+			expect(modelDirectory()).toBe(mocks.bundled)
+
+			await fetchModelCommand()
+
+			expect(mocks.fetchModel).toHaveBeenCalledWith(fetchDirectory(), expect.anything())
+			expect(fetchDirectory()).toBe(defaultModelDirectory())
+			expect(fetchDirectory()).not.toBe(mocks.bundled)
+		} finally {
+			vi.unstubAllEnvs()
+			fs.rmSync(bundled, { recursive: true, force: true })
+		}
 	})
 
 	it("取れても揃っていなければ、揃った扱いにしない", async () => {

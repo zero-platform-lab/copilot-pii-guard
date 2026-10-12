@@ -3,6 +3,8 @@ src/**
 node_modules/**
 !dist/node_modules/**
 *.mjs
+# 作るための道具（モデルの変換・同梱）。配る拡張は使わない。
+scripts/**
 *.ts
 tsconfig.json
 vitest.*

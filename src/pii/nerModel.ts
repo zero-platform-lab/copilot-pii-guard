@@ -39,9 +39,45 @@ export const REQUIRED_FILES = [
 	"onnx/model_quantized.onnx",
 ] as const
 
-/** 置き場所の既定（`FR-PII-23a`）。配布物には入れないので、設定の置き場所の下に置く。 */
+/** 置き場所の既定（`FR-PII-23a`）。モデルを取ってくるときは、ここへ置く。 */
 export function defaultModelDirectory(): string {
 	return path.join(getGlobalAgentDirectory(), "pii-ner")
+}
+
+/**
+ * 配布物に同梱したモデルの置き場所。同梱していない配布物では undefined。
+ *
+ * 外へ出られない端末のために、モデルを入れた配布物（`-with-model`）も作る。
+ * `dist/extension.js` から見た `dist/ner-model`。束ねる側が `SHA256SUMS` と一緒に写す
+ * （`package-vsix.mjs --with-model`）。照合の値が無ければ、同梱とみなさない。
+ */
+export function bundledModelDirectory(base: string = __dirname): string | undefined {
+	const directory = path.join(base, "ner-model")
+	return existsSync(path.join(directory, CHECKSUM_FILE)) ? directory : undefined
+}
+
+/**
+ * 判定に使うモデルの置き場所を決める。利用者の指定 → 既定の置き場所 → 同梱のモデルの順。
+ *
+ * `resolved` は、利用者が設定した場所を `~` を開いて解決したもの（空欄なら undefined）。
+ *
+ * **既定の置き場所を同梱より先に見る。** 同梱のモデルは起動のたびに既定の置き場所へ写す
+ * （`nerModelInstall.ts`）。写したあとも同梱の場所を見ていると、画面には拡張を入れた場所が出て、
+ * 写したモデルが使われていないように見える。同梱の場所を使うのは、まだ写していないとき
+ * （写す前・写すのに失敗したとき）だけである。既定の置き場所に照合の値が無ければ、写したもの
+ * とはみなさない。
+ *
+ * **モデルを取ってくる先には使わない。** 同梱のモデルの場所は拡張を入れた場所の中にあり、
+ * 拡張を更新すると消える。取ってくる先は、指定が無ければ `defaultModelDirectory`。
+ */
+export function modelDirectoryFor(
+	resolved: string | undefined,
+	base?: string,
+	fallback: string = defaultModelDirectory(),
+): string {
+	if (resolved) return resolved
+	if (existsSync(path.join(fallback, CHECKSUM_FILE))) return fallback
+	return bundledModelDirectory(base) ?? fallback
 }
 
 /**

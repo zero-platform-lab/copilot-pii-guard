@@ -8,6 +8,8 @@ vi.mock("../nerBackend", () => ({ loadBackend: model.load, detectWith: model.det
 vi.mock("../nerModel", () => ({
 	hasNerRuntime: () => true,
 	defaultModelDirectory: () => "/tmp/default-ner",
+	// 同梱の無い配布物での本物と同じ: 指定があればそれ、無ければ既定の場所。
+	modelDirectoryFor: (resolved?: string) => resolved ?? "/tmp/default-ner",
 	describeCheck: () => "missing model",
 }))
 

@@ -16,6 +16,7 @@ import { createHandler } from "./participant"
 import { disposeFileToolPreviews, setMappingStorageRoot } from "./fileTools"
 import { readSettings } from "./settings"
 import { fetchModelCommand, showModelStatus } from "./model"
+import { installBundledModelOnStartup } from "./pii/nerModelInstall"
 import { t } from "./messages"
 
 /**
@@ -33,6 +34,16 @@ function piiMasker(): TaskPiiMasker {
 
 export function activate(context: vscode.ExtensionContext): void {
 	context.subscriptions.push({ dispose: disposeFileToolPreviews })
+
+	// モデルを同梱した配布物なら、既定の場所へ写す。拡張を更新すると同梱の場所は消えるため。
+	// 約 300 MB を書くので待たない。結果は出力の「PII Guard」へ残す。
+	const log = vscode.window.createOutputChannel("PII Guard")
+	context.subscriptions.push(log)
+	void installBundledModelOnStartup(
+		() => readSettings().properNouns?.modelPath,
+		(line) => log.appendLine(line),
+	)
+
 	const fileMapping = new FileMappingController(context)
 	setMappingStorageRoot(fileMapping.storageRoot)
 	context.subscriptions.push(...fileMapping.start())
