@@ -5,6 +5,11 @@ node_modules/**
 *.mjs
 # 作るための道具（モデルの変換・同梱）。配る拡張は使わない。
 scripts/**
+# 試験の網羅率の報告。ソースを含む（v0.2.9 に入っていた）。
+coverage/**
+# 作った VSIX と、リポジトリの設定。
+bin/**
+.gitignore
 *.ts
 tsconfig.json
 vitest.*

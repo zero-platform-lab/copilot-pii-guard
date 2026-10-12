@@ -16,6 +16,8 @@ import { existsSync, mkdirSync, readdirSync, readFileSync } from "fs"
 import path from "path"
 import { fileURLToPath } from "url"
 
+import { unexpectedFiles } from "./scripts/vsix-files.mjs"
+
 const here = path.dirname(fileURLToPath(import.meta.url))
 
 const { version } = JSON.parse(readFileSync(path.join(here, "package.json"), "utf8"))
@@ -61,6 +63,20 @@ function buildOne(target) {
 
 	run("node", ["esbuild.mjs", "--production"], env)
 	mkdirSync(path.join(here, "bin"), { recursive: true })
+
+	// **入れるファイルを、入れてよいものの一覧で確かめてから包む**（`scripts/vsix-files.mjs`）。
+	// v0.2.9 の VSIX には、ソースを含む網羅率の報告（`coverage/`）が黙って入っていた。
+	const listing = spawnSync("vsce", ["ls", "--no-dependencies"], { cwd: here, env, encoding: "utf8", shell: true })
+	if (listing.status !== 0) {
+		console.error(listing.stderr)
+		process.exit(listing.status ?? 1)
+	}
+	const unexpected = unexpectedFiles(listing.stdout)
+	if (unexpected.length > 0) {
+		console.error(`\nVSIX に入れてはいけないファイルが ${unexpected.length} 件ある（.vscodeignore に足すか、消してから作る）:`)
+		for (const file of unexpected.slice(0, 20)) console.error(`  ${file}`)
+		process.exit(1)
+	}
 
 	// `universal` は platform を指さずに作る。受け取り手を絞らない配布物になる。
 	const forTarget = target === "universal" ? [] : ["--target", target]
