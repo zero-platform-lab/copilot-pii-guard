@@ -50,6 +50,17 @@ npm run vsix          # VSIX を bin/ に生成
 | `copilot-pii-guard-win32-x64-0.2.9.vsix` | Windows (x64) | 動く |
 | `copilot-pii-guard-0.2.9.vsix` | それ以外 | 動かない（基本検出は動く） |
 
+固有名詞検出のモデルを同梱した VSIX も作れます。閉鎖環境の端末へモデルごと配るためのものです。
+展開したモデル（`SHA256SUMS` を含む6ファイル）の場所を `--with-model` で指定します。
+
+```sh
+node package-vsix.mjs linux-x64 --with-model=$HOME/.agent/pii-ner
+# bin/copilot-pii-guard-linux-x64-with-model-0.2.9.vsix（約 220 MB）
+```
+
+`SHA256SUMS` と照合できないモデルは同梱しません。照合に失敗すると VSIX を作らずに止まります。
+native を含まない `universal` には同梱できません。
+
 ## 入れ方
 
 ```sh
@@ -279,6 +290,15 @@ UTF-8 にする。
 ```
 
 閉鎖環境でも使えます。別の端末でダウンロードしたファイルを媒体で運び、上記の場所へ配置してください。
+
+モデルを同梱した VSIX（`-with-model`）を入れた場合は、配置は要りません。起動したときに、同梱の
+モデルを `~/.agent/pii-ner` へ自動で写します。写した結果は、出力パネルの「PII Guard」に表示します。
+同梱のモデルは拡張の更新で消えますが、写したモデルは残るので、次の版を同梱しない VSIX で更新しても
+固有名詞検出は動き続けます。`piiGuard.properNouns.modelPath` を設定している場合は写しません。
+
+モデルを探す順は、`piiGuard.properNouns.modelPath` → `~/.agent/pii-ner` → 同梱のモデルです。
+`PII Guard: モデルを取得する` は同梱の場所へは取得せず、`modelPath` が空なら `~/.agent/pii-ner`
+へ置きます。
 
 インターネットに接続できる環境では、`piiGuard.properNouns.modelUrl` に次のURLを設定してから
 `PII Guard: モデルを取得する` を実行します。
