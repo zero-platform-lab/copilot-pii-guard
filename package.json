@@ -457,7 +457,7 @@
 		"vscode:prepublish": "node esbuild.mjs --production"
 	},
 	"dependencies": {
-		"@huggingface/transformers": "^4.2.0",
+		"@huggingface/transformers": "^4.3.1",
 		"onnxruntime-node": "^1.23.0",
 		"undici": "^7.0.0"
 	},
