@@ -13,7 +13,7 @@ import {
 	type MaskMemo,
 } from "./maskConversation"
 import { detectWith, loadBackend, type NerBackend } from "./nerBackend"
-import { defaultModelDirectory, describeCheck, hasNerRuntime } from "./nerModel"
+import { describeCheck, hasNerRuntime, modelDirectoryFor } from "./nerModel"
 import { applyPlan, planMasking, type MaskOptions } from "./maskText"
 import type { PiiKind, PiiMatch, PiiTerm } from "./types"
 
@@ -240,7 +240,8 @@ export class TaskPiiMasker {
 		if (settings?.enabled !== true) return undefined
 
 		// `resolveDictionaryPath` は `~` を開き、空欄を落とす。落ちたら既定の場所を見る。
-		const directory = (settings.modelPath && resolveDictionaryPath(settings.modelPath)) || defaultModelDirectory()
+		// 指定 → 既定の場所 → 同梱の順に見る（`modelDirectoryFor`）。
+		const directory = modelDirectoryFor((settings.modelPath && resolveDictionaryPath(settings.modelPath)) || undefined)
 
 		// **先に上限を見る。** 判定したあとに捨てると、いま判定したぶんまで消える。
 		this.capNerMemo()
